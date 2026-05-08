@@ -248,11 +248,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     /// Apply the master-stack layout: ask each tile to size itself to its slot in the layout.
     fn update_tile_sizes(&mut self) {
         let layout = self.column_layout();
-        for ((_, _, size), col) in layout.into_iter().zip(self.columns_mut()) {
-            // Skip tiles that are pending fullscreen/maximized — those are sized separately.
+        eprintln!(
+            "[master-stack] update_tile_sizes: master={} stack_n={} working_area={:?}",
+            self.master.is_some(),
+            self.stack.len(),
+            self.working_area
+        );
+        for ((idx, pos, size), col) in layout.into_iter().zip(self.columns_mut()) {
             if col.is_pending_fullscreen || col.is_pending_maximized {
+                eprintln!("[master-stack]   col#{idx} skipped (pending fullscreen/maximized)");
                 continue;
             }
+            eprintln!("[master-stack]   col#{idx} pos={pos:?} size={size:?}");
             col.tile.request_tile_size(size, false, None);
         }
     }
@@ -323,12 +330,20 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         _height: Option<PresetSize>,
         _rules: &ResolvedWindowRules,
     ) -> Size<i32, Logical> {
-        let gaps = self.options.layout.gaps;
-        Size::from((
-            f64::max(self.working_area.size.w * self.master_ratio - gaps * 2., 1.),
-            f64::max(self.working_area.size.h - gaps * 2., 1.),
-        ))
-        .to_i32_floor()
+        // Predict the layout slot the new window will land in. If master is empty, the new
+        // window becomes master and gets the full working area (no stack to share with). Otherwise
+        // it joins the stack and shares the right column with the existing stack tiles.
+        let work = self.working_area;
+        let (w, h) = if self.master.is_none() {
+            (work.size.w, work.size.h)
+        } else {
+            let new_stack_count = self.stack.len() + 1;
+            (
+                work.size.w * (1.0 - self.master_ratio),
+                work.size.h / new_stack_count as f64,
+            )
+        };
+        Size::from((f64::max(w, 1.), f64::max(h, 1.))).to_i32_floor()
     }
 
     pub fn is_centering_focused_column(&self) -> bool {
