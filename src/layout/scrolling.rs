@@ -191,6 +191,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.parent_area = parent_area;
         self.scale = scale;
         self.options = options;
+
+        self.update_tile_sizes();
     }
 
     pub fn update_shaders(&mut self) {
@@ -231,8 +233,28 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             || !self.closing_windows.is_empty()
     }
 
-    pub fn update_render_elements(&mut self, _is_active: bool) {
-        // No-op for the skeleton; real implementation will lay tiles out.
+    pub fn update_render_elements(&mut self, is_active: bool) {
+        let layout = self.column_layout();
+        let focused_idx = self.active_column_idx_internal();
+        for ((unified_idx, pos, size), col) in
+            layout.into_iter().zip(self.columns_mut())
+        {
+            let col_active = is_active && Some(unified_idx) == focused_idx;
+            let view_rect = Rectangle::new(pos, size);
+            col.update_render_elements(col_active, view_rect);
+        }
+    }
+
+    /// Apply the master-stack layout: ask each tile to size itself to its slot in the layout.
+    fn update_tile_sizes(&mut self) {
+        let layout = self.column_layout();
+        for ((_, _, size), col) in layout.into_iter().zip(self.columns_mut()) {
+            // Skip tiles that are pending fullscreen/maximized — those are sized separately.
+            if col.is_pending_fullscreen || col.is_pending_maximized {
+                continue;
+            }
+            col.tile.request_tile_size(size, false, None);
+        }
     }
 
     pub fn tiles(&self) -> impl Iterator<Item = &Tile<W>> + '_ {
@@ -403,6 +425,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 self.focus = Focus::Master;
             }
         }
+
+        self.update_tile_sizes();
     }
 
     pub fn remove_active_tile(&mut self, transaction: Transaction) -> Option<RemovedTile<W>> {
@@ -448,7 +472,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     /// Removes the column at unified index (0 = master, 1.. = stack[idx-1]) and fixes focus.
     fn take_column_at(&mut self, column_idx: usize) -> Column<W> {
-        if column_idx == 0 {
+        let removed = if column_idx == 0 {
             // Master removal: promote stack[0] if any, else master becomes None.
             let removed = self.master.take().expect("master expected");
             if !self.stack.is_empty() {
@@ -460,7 +484,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let removed = self.stack.remove(column_idx - 1);
             self.update_focus_after_removal(column_idx);
             removed
-        }
+        };
+
+        self.update_tile_sizes();
+        removed
     }
 
     fn update_focus_after_removal(&mut self, removed_idx: usize) {
@@ -706,6 +733,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 }
                 self.master = Some(promoted);
                 self.focus = Focus::Master;
+                self.update_tile_sizes();
                 true
             }
             _ => false,
@@ -725,6 +753,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     self.master = Some(new_master);
                     self.stack.insert(0, old_master);
                     self.focus = Focus::Stack(0);
+                    self.update_tile_sizes();
                     return true;
                 }
                 false
@@ -745,6 +774,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 let col = self.stack.remove(idx);
                 self.stack.push(col);
                 self.focus = Focus::Stack(self.stack.len() - 1);
+                // Stack reordering keeps each slot the same size; no need to resize.
             }
         }
     }
@@ -963,12 +993,54 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // No-op.
     }
 
-    pub fn set_fullscreen(&mut self, _window: &W::Id, _is_fullscreen: bool) -> bool {
-        todo!("master-stack: set_fullscreen")
+    pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) -> bool {
+        let Some(unified_idx) = self
+            .columns()
+            .position(|col| col.tile.window().id() == window)
+        else {
+            return false;
+        };
+
+        let working_area = self.working_area;
+        let col = self
+            .column_mut_by_unified_idx(unified_idx)
+            .expect("column index must be valid");
+        let changed = col.set_fullscreen(is_fullscreen);
+
+        // If we just left fullscreen/maximized, the master-stack slot size needs to be requested.
+        if !is_fullscreen {
+            self.update_tile_sizes();
+        }
+        let _ = working_area;
+        changed
     }
 
-    pub fn set_maximized(&mut self, _window: &W::Id, _maximize: bool) -> bool {
-        todo!("master-stack: set_maximized")
+    pub fn set_maximized(&mut self, window: &W::Id, maximize: bool) -> bool {
+        let Some(unified_idx) = self
+            .columns()
+            .position(|col| col.tile.window().id() == window)
+        else {
+            return false;
+        };
+
+        let working_area = self.working_area;
+        let col = self
+            .column_mut_by_unified_idx(unified_idx)
+            .expect("column index must be valid");
+        let changed = col.set_maximized(maximize, working_area.size);
+
+        if !maximize {
+            self.update_tile_sizes();
+        }
+        changed
+    }
+
+    fn column_mut_by_unified_idx(&mut self, unified_idx: usize) -> Option<&mut Column<W>> {
+        if unified_idx == 0 {
+            self.master.as_mut()
+        } else {
+            self.stack.get_mut(unified_idx - 1)
+        }
     }
 
     pub fn render_above_top_layer(&self) -> bool {
@@ -977,16 +1049,47 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     pub fn render<R: NiriRenderer>(
         &self,
-        _ctx: RenderCtx<R>,
-        _xray_pos: XrayPos,
-        _focus_ring: bool,
-        _push: &mut dyn FnMut(ScrollingSpaceRenderElement<R>),
+        mut ctx: RenderCtx<R>,
+        xray_pos: XrayPos,
+        focus_ring: bool,
+        push: &mut dyn FnMut(ScrollingSpaceRenderElement<R>),
     ) {
-        todo!("master-stack: render")
+        let focused_idx = self.active_column_idx_internal();
+        let layout = self.column_layout();
+        for (unified_idx, pos, _size) in layout {
+            let Some(col) = self.column_by_unified_idx(unified_idx) else {
+                continue;
+            };
+            let is_active = focus_ring && Some(unified_idx) == focused_idx;
+            col.tile
+                .render(ctx.r(), pos, xray_pos, is_active, &mut |elem| {
+                    push(ScrollingSpaceRenderElement::Tile(elem))
+                });
+        }
     }
 
-    pub fn window_under(&self, _pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
-        todo!("master-stack: window_under")
+    pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
+        // Iterate from the focused tile outward so a click on overlapping content prefers the
+        // active one, then fall back to the rest. For the master-stack layout tiles don't
+        // actually overlap, so a simple linear scan suffices.
+        let layout = self.column_layout();
+        for (unified_idx, tile_pos, _size) in layout {
+            let Some(col) = self.column_by_unified_idx(unified_idx) else {
+                continue;
+            };
+            if let Some(hit) = HitType::hit_tile(&col.tile, tile_pos, pos) {
+                return Some(hit);
+            }
+        }
+        None
+    }
+
+    fn column_by_unified_idx(&self, unified_idx: usize) -> Option<&Column<W>> {
+        if unified_idx == 0 {
+            self.master.as_ref()
+        } else {
+            self.stack.get(unified_idx - 1)
+        }
     }
 
     pub fn view_offset_gesture_begin(&mut self, _is_touchpad: bool) {
@@ -1150,19 +1253,31 @@ impl<W: LayoutElement> Column<W> {
         let clock = tile.clock.clone();
         let pending_sizing_mode = tile.window().pending_sizing_mode();
 
-        Self {
+        let mut rv = Self {
             tile,
             width,
             is_full_width,
-            is_pending_fullscreen: matches!(pending_sizing_mode, SizingMode::Fullscreen),
-            is_pending_maximized: matches!(pending_sizing_mode, SizingMode::Maximized),
+            is_pending_fullscreen: false,
+            is_pending_maximized: false,
             view_size,
             working_area,
             parent_area,
             scale,
             clock,
             options,
+        };
+
+        match pending_sizing_mode {
+            SizingMode::Normal => (),
+            SizingMode::Maximized => {
+                rv.set_maximized(true, working_area.size);
+            }
+            SizingMode::Fullscreen => {
+                rv.set_fullscreen(true);
+            }
         }
+
+        rv
     }
 
     fn update_config(
@@ -1258,6 +1373,33 @@ impl<W: LayoutElement> Column<W> {
         } else {
             false
         }
+    }
+
+    /// Sets the pending fullscreen state and asks the tile to size itself accordingly. Returns
+    /// whether the state actually changed.
+    fn set_fullscreen(&mut self, is_fullscreen: bool) -> bool {
+        if self.is_pending_fullscreen == is_fullscreen {
+            return false;
+        }
+        self.is_pending_fullscreen = is_fullscreen;
+        if is_fullscreen {
+            self.is_pending_maximized = false;
+            self.tile.request_fullscreen(false, None);
+        }
+        // If unsetting, the parent ScrollingSpace will call update_tile_sizes() to resize.
+        true
+    }
+
+    fn set_maximized(&mut self, maximize: bool, working_area_size: Size<f64, Logical>) -> bool {
+        if self.is_pending_maximized == maximize {
+            return false;
+        }
+        self.is_pending_maximized = maximize;
+        if maximize {
+            self.is_pending_fullscreen = false;
+            self.tile.request_maximized(working_area_size, false, None);
+        }
+        true
     }
 }
 
