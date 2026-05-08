@@ -1147,7 +1147,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn interactive_resize_begin(&mut self, _window: W::Id, _edges: ResizeEdge) -> bool {
-        todo!("master-stack: interactive_resize_begin")
+        // Master-stack v1: no interactive edge-drag resize. Returning false signals niri
+        // didn't start a resize, so update/end won't fire.
+        false
     }
 
     pub fn interactive_resize_update(
@@ -1155,11 +1157,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         _window: &W::Id,
         _delta: Point<f64, Logical>,
     ) -> bool {
-        todo!("master-stack: interactive_resize_update")
+        false
     }
 
     pub fn interactive_resize_end(&mut self, _window: Option<&W::Id>) {
-        todo!("master-stack: interactive_resize_end")
+        // No-op: no resize to end.
     }
 
     pub fn refresh(&mut self, _is_active: bool, _is_focused: bool) {
