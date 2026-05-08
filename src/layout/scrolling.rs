@@ -248,18 +248,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     /// Apply the master-stack layout: ask each tile to size itself to its slot in the layout.
     fn update_tile_sizes(&mut self) {
         let layout = self.column_layout();
-        eprintln!(
-            "[master-stack] update_tile_sizes: master={} stack_n={} working_area={:?}",
-            self.master.is_some(),
-            self.stack.len(),
-            self.working_area
-        );
-        for ((idx, pos, size), col) in layout.into_iter().zip(self.columns_mut()) {
+        for ((_, _, size), col) in layout.into_iter().zip(self.columns_mut()) {
+            // Skip tiles that are pending fullscreen/maximized — those are sized separately.
             if col.is_pending_fullscreen || col.is_pending_maximized {
-                eprintln!("[master-stack]   col#{idx} skipped (pending fullscreen/maximized)");
                 continue;
             }
-            eprintln!("[master-stack]   col#{idx} pos={pos:?} size={size:?}");
             col.tile.request_tile_size(size, false, None);
         }
     }
@@ -578,8 +571,24 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.take_column_at(column_idx)
     }
 
-    pub fn update_window(&mut self, _window: &W::Id, _serial: Option<Serial>) {
-        // No-op stub for now; column resizing/animation isn't implemented yet.
+    pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
+        // Find the column owning this window and propagate the commit/update through the tile.
+        // Without on_commit + tile.update_window the tile wouldn't transition its sizing_mode or
+        // clear pending state after a configure ack, leaving the layout out of sync with the
+        // actual window size.
+        let Some(col) = self
+            .master
+            .iter_mut()
+            .chain(self.stack.iter_mut())
+            .find(|c| c.tile.window().id() == window)
+        else {
+            return;
+        };
+
+        if let Some(serial) = serial {
+            col.tile.window_mut().on_commit(serial);
+        }
+        col.tile.update_window();
     }
 
     pub fn scroll_amount_to_activate(&self, _window: &W::Id) -> f64 {
@@ -608,7 +617,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         _window: &W::Id,
         _blocker: TransactionBlocker,
     ) {
-        todo!("master-stack: start_close_animation_for_window")
+        // Master-stack v1: no close animation. The window simply disappears when the toplevel is
+        // destroyed. The transaction blocker is dropped here, releasing any waiting transactions.
     }
 
     pub fn start_open_animation(&mut self, id: &W::Id) -> bool {
