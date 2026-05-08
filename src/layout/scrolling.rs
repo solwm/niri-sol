@@ -1192,10 +1192,29 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // No-op: no resize to end.
     }
 
-    pub fn refresh(&mut self, _is_active: bool, _is_focused: bool) {
-        // No-op stub. Real impl will send pending configures, refresh windows, etc.
-        for col in self.master.iter_mut().chain(self.stack.iter_mut()) {
-            col.tile.window_mut().refresh();
+    pub fn refresh(&mut self, is_active: bool, is_focused: bool) {
+        // Without send_pending_configure() on each window, request_tile_size's pending state
+        // never becomes an actual Wayland configure event — the client stays stuck at its first
+        // configure and never resizes when the layout changes.
+        let active_unified_idx = self.active_column_idx_internal();
+        let working_area_size = self.working_area.size;
+
+        for (col_idx, col) in self
+            .master
+            .iter_mut()
+            .chain(self.stack.iter_mut())
+            .enumerate()
+        {
+            let win = col.tile.window_mut();
+            win.set_floating(false);
+            win.set_active_in_column(true); // single-tile columns
+            let activated = is_active && is_focused && Some(col_idx) == active_unified_idx;
+            win.set_activated(activated);
+            win.set_interactive_resize(None);
+            win.set_bounds(working_area_size.to_i32_round());
+
+            win.send_pending_configure();
+            win.refresh();
         }
     }
 
