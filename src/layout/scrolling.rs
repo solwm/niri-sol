@@ -248,11 +248,25 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     /// Apply the master-stack layout: ask each tile to size itself to its slot in the layout.
     fn update_tile_sizes(&mut self) {
         let layout = self.column_layout();
-        for ((_, _, size), col) in layout.into_iter().zip(self.columns_mut()) {
-            // Skip tiles that are pending fullscreen/maximized — those are sized separately.
+        eprintln!(
+            "[ms] update_tile_sizes: master={} stack_n={} work=({},{} {}x{})",
+            self.master.is_some(),
+            self.stack.len(),
+            self.working_area.loc.x,
+            self.working_area.loc.y,
+            self.working_area.size.w,
+            self.working_area.size.h,
+        );
+        for ((idx, pos, size), col) in layout.into_iter().zip(self.columns_mut()) {
             if col.is_pending_fullscreen || col.is_pending_maximized {
+                eprintln!("[ms]   col#{idx} SKIP (pending fs/max)");
                 continue;
             }
+            let cur_win = col.tile.window().size();
+            eprintln!(
+                "[ms]   col#{idx} req=({},{} {}x{}) cur_win={}x{}",
+                pos.x, pos.y, size.w, size.h, cur_win.w, cur_win.h
+            );
             col.tile.request_tile_size(size, false, None);
         }
     }
@@ -419,11 +433,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             self.options.clone(),
         );
 
+        let win_id = format!("{:?}", column.tile.window().id());
+        let win_size = column.tile.window().size();
         if self.master.is_none() {
             self.master = Some(column);
             if activate || matches!(self.focus, Focus::Empty) {
                 self.focus = Focus::Master;
             }
+            eprintln!(
+                "[ms] add_column → master, win={} {}x{} activate={activate}",
+                win_id, win_size.w, win_size.h
+            );
         } else {
             let new_idx = self.stack.len();
             self.stack.push(column);
@@ -432,6 +452,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             } else if matches!(self.focus, Focus::Empty) {
                 self.focus = Focus::Master;
             }
+            eprintln!(
+                "[ms] add_column → stack[{new_idx}], win={} {}x{} activate={activate}",
+                win_id, win_size.w, win_size.h
+            );
         }
 
         self.update_tile_sizes();
@@ -573,22 +597,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
         // Find the column owning this window and propagate the commit/update through the tile.
-        // Without on_commit + tile.update_window the tile wouldn't transition its sizing_mode or
-        // clear pending state after a configure ack, leaving the layout out of sync with the
-        // actual window size.
-        let Some(col) = self
+        let Some((idx, col)) = self
             .master
             .iter_mut()
             .chain(self.stack.iter_mut())
-            .find(|c| c.tile.window().id() == window)
+            .enumerate()
+            .find(|(_, c)| c.tile.window().id() == window)
         else {
             return;
         };
 
+        let pre_size = col.tile.window().size();
         if let Some(serial) = serial {
             col.tile.window_mut().on_commit(serial);
         }
         col.tile.update_window();
+        let post_size = col.tile.window().size();
+        eprintln!(
+            "[ms] update_window col#{idx} serial={:?} win {}x{} -> {}x{}",
+            serial, pre_size.w, pre_size.h, post_size.w, post_size.h
+        );
     }
 
     pub fn scroll_amount_to_activate(&self, _window: &W::Id) -> f64 {
