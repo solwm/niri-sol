@@ -234,8 +234,19 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn update_render_elements(&mut self, is_active: bool) {
-        let layout = self.column_layout();
         let focused_idx = self.active_column_idx_internal();
+
+        // Takeover: a single column is pending fullscreen/maximized — it fills the relevant
+        // area (view for fullscreen, working area for maximized) and other tiles are hidden.
+        if let Some((take_idx, area)) = self.takeover() {
+            if let Some(col) = self.column_mut_by_unified_idx(take_idx) {
+                let col_active = is_active && Some(take_idx) == focused_idx;
+                col.update_render_elements(col_active, area);
+            }
+            return;
+        }
+
+        let layout = self.column_layout();
         for ((unified_idx, pos, size), col) in
             layout.into_iter().zip(self.columns_mut())
         {
@@ -243,6 +254,20 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let view_rect = Rectangle::new(pos, size);
             col.update_render_elements(col_active, view_rect);
         }
+    }
+
+    /// If a tile is pending fullscreen/maximized, return its unified idx and the rect it
+    /// should occupy. Fullscreen → entire view; maximized → working area.
+    fn takeover(&self) -> Option<(usize, Rectangle<f64, Logical>)> {
+        for (idx, col) in self.columns().enumerate() {
+            if col.is_pending_fullscreen {
+                return Some((idx, Rectangle::from_size(self.view_size)));
+            }
+            if col.is_pending_maximized {
+                return Some((idx, self.working_area));
+            }
+        }
+        None
     }
 
     /// Apply the master-stack layout: ask each tile to size itself to its slot in the layout.
@@ -1098,6 +1123,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         push: &mut dyn FnMut(ScrollingSpaceRenderElement<R>),
     ) {
         let focused_idx = self.active_column_idx_internal();
+
+        if let Some((take_idx, area)) = self.takeover() {
+            if let Some(col) = self.column_by_unified_idx(take_idx) {
+                let is_active = focus_ring && Some(take_idx) == focused_idx;
+                col.tile
+                    .render(ctx.r(), area.loc, xray_pos, is_active, &mut |elem| {
+                        push(ScrollingSpaceRenderElement::Tile(elem))
+                    });
+            }
+            return;
+        }
+
         let layout = self.column_layout();
         for (unified_idx, pos, _size) in layout {
             let Some(col) = self.column_by_unified_idx(unified_idx) else {
@@ -1112,9 +1149,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
-        // Iterate from the focused tile outward so a click on overlapping content prefers the
-        // active one, then fall back to the rest. For the master-stack layout tiles don't
-        // actually overlap, so a simple linear scan suffices.
+        // Takeover: only the maximized/fullscreen tile is hit-testable.
+        if let Some((take_idx, area)) = self.takeover() {
+            let col = self.column_by_unified_idx(take_idx)?;
+            return HitType::hit_tile(&col.tile, area.loc, pos);
+        }
+
         let layout = self.column_layout();
         for (unified_idx, tile_pos, _size) in layout {
             let Some(col) = self.column_by_unified_idx(unified_idx) else {
