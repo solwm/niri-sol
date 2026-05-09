@@ -318,14 +318,18 @@ impl<W: LayoutElement> Monitor<W> {
             }
         }
 
-        if options.layout.empty_workspace_above_first && !workspaces.is_empty() {
-            let ws = Workspace::new(output.clone(), clock.clone(), options.clone());
-            workspaces.insert(0, ws);
-            active_workspace_idx += 1;
+        // Master-stack rework: ensure exactly N static workspaces. Pad with empties if we have
+        // fewer than configured (e.g. fresh start, or the count was raised). Keep extras if
+        // we have more (e.g. monitor reconnect after the count was lowered) so user windows
+        // are not lost.
+        let workspace_count = options.layout.workspace_count.max(1) as usize;
+        while workspaces.len() < workspace_count {
+            workspaces.push(Workspace::new(
+                output.clone(),
+                clock.clone(),
+                options.clone(),
+            ));
         }
-
-        let ws = Workspace::new(output.clone(), clock.clone(), options.clone());
-        workspaces.push(ws);
 
         Self {
             output_name: output.name(),
@@ -423,11 +427,12 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn add_workspace_top(&mut self) {
-        self.add_workspace_at(0);
+        // Master-stack: workspaces are static, no-op.
     }
 
     pub fn add_workspace_bottom(&mut self) {
-        self.add_workspace_at(self.workspaces.len());
+        // Master-stack: workspaces are static, no-op.
+        let _ = self.workspaces.len();
     }
 
     pub fn activate_workspace(&mut self, idx: usize) {
@@ -623,34 +628,8 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn clean_up_workspaces(&mut self) {
+        // Master-stack: workspaces are static, no-op. Empty workspaces remain present.
         assert!(self.workspace_switch.is_none());
-
-        let range_start = if self.options.layout.empty_workspace_above_first {
-            1
-        } else {
-            0
-        };
-        for idx in (range_start..self.workspaces.len() - 1).rev() {
-            if self.active_workspace_idx == idx {
-                continue;
-            }
-
-            if !self.workspaces[idx].has_windows_or_name() {
-                self.workspaces.remove(idx);
-                if self.active_workspace_idx > idx {
-                    self.active_workspace_idx -= 1;
-                }
-            }
-        }
-
-        // Special case handling when empty_workspace_above_first is set and all workspaces
-        // are empty.
-        if self.options.layout.empty_workspace_above_first && self.workspaces.len() == 2 {
-            assert!(!self.workspaces[0].has_windows_or_name());
-            assert!(!self.workspaces[1].has_windows_or_name());
-            self.workspaces.remove(1);
-            self.active_workspace_idx = 0;
-        }
     }
 
     pub fn unname_workspace(&mut self, id: WorkspaceId) -> bool {
