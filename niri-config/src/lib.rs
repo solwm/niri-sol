@@ -40,6 +40,7 @@ pub mod layout;
 pub mod misc;
 pub mod output;
 pub mod recent_windows;
+pub mod sol;
 pub mod utils;
 pub mod window_rule;
 pub mod workspace;
@@ -484,6 +485,27 @@ impl Config {
                 );
             }
         };
+
+        // The sol config format (Hyprland-ish key=value) lives in `.conf` files. KDL
+        // continues to be the default for everything else (so existing niri configs still
+        // work).
+        let is_sol = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("conf"))
+            .unwrap_or(false);
+
+        if is_sol {
+            return ConfigParseResult {
+                config: crate::sol::parse_sol(path, &contents)
+                    .map(|cfg| {
+                        debug!("loaded sol config from {path:?}");
+                        cfg
+                    })
+                    .map_err(|e| e.context(format!("error parsing sol config {path:?}"))),
+                includes: Vec::new(),
+            };
+        }
 
         Self::parse(path, &contents).map_config_res(|res| {
             let config = res.context("error parsing")?;

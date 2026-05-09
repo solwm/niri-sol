@@ -331,6 +331,16 @@ fn env_config_path() -> Option<PathBuf> {
 }
 
 fn default_config_path() -> Option<PathBuf> {
+    // Prefer ~/.config/sol/sol.conf if it exists (master-stack rework's primary config format).
+    // Fall back to the regular niri KDL location otherwise.
+    if let Some(sol_dirs) = ProjectDirs::from("", "", "sol") {
+        let mut sol_path = sol_dirs.config_dir().to_owned();
+        sol_path.push("sol.conf");
+        if sol_path.exists() {
+            return Some(sol_path);
+        }
+    }
+
     let Some(dirs) = ProjectDirs::from("", "", "niri") else {
         warn!("error retrieving home directory");
         return None;
