@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use niri_ipc::PickedColor;
+use sol_ipc::PickedColor;
 use zbus::fdo::{self, RequestNameFlags};
 use zbus::zvariant::OwnedValue;
 use zbus::{interface, zvariant};

@@ -1,4 +1,4 @@
-use niri_config::CornerRadius;
+use sol_config::CornerRadius;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
@@ -12,9 +12,9 @@ pub struct InsertHintElement {
 pub type InsertHintRenderElement = FocusRingRenderElement;
 
 impl InsertHintElement {
-    pub fn new(config: niri_config::InsertHint) -> Self {
+    pub fn new(config: sol_config::InsertHint) -> Self {
         Self {
-            inner: FocusRing::new(niri_config::FocusRing {
+            inner: FocusRing::new(sol_config::FocusRing {
                 off: config.off,
                 width: 0.,
                 active_color: config.color,
@@ -27,8 +27,8 @@ impl InsertHintElement {
         }
     }
 
-    pub fn update_config(&mut self, config: niri_config::InsertHint) {
-        self.inner.update_config(niri_config::FocusRing {
+    pub fn update_config(&mut self, config: sol_config::InsertHint) {
+        self.inner.update_config(sol_config::FocusRing {
             off: config.off,
             width: 0.,
             active_color: config.color,

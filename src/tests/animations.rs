@@ -2,9 +2,9 @@ use std::fmt::Write as _;
 use std::time::Duration;
 
 use insta::assert_snapshot;
-use niri_config::animations::{Curve, EasingParams, Kind};
-use niri_config::Config;
-use niri_ipc::SizeChange;
+use sol_config::animations::{Curve, EasingParams, Kind};
+use sol_config::Config;
+use sol_ipc::SizeChange;
 use smithay::utils::{Point, Size};
 use wayland_client::protocol::wl_surface::WlSurface;
 

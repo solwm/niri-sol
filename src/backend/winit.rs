@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context as _;
-use niri_config::{Config, OutputName};
+use sol_config::{Config, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::egl::EGLDevice;
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -46,8 +46,8 @@ impl Winit {
         let builder = Window::default_attributes()
             .with_inner_size(LogicalSize::new(1280.0, 800.0))
             // .with_resizable(false)
-            .with_title("niri")
-            .with_name("niri", "");
+            .with_title("sol")
+            .with_name("sol", "");
         let (backend, winit) = winit::init_from_attributes(builder)?;
 
         let output = Output::new(
@@ -78,13 +78,13 @@ impl Winit {
         let physical_properties = output.physical_properties();
         let ipc_outputs = Arc::new(Mutex::new(HashMap::from([(
             OutputId::next(),
-            niri_ipc::Output {
+            sol_ipc::Output {
                 name: output.name(),
                 make: physical_properties.make,
                 model: physical_properties.model,
                 serial: None,
                 physical_size: None,
-                modes: vec![niri_ipc::Mode {
+                modes: vec![sol_ipc::Mode {
                     width: backend.window_size().w.clamp(0, u16::MAX as i32) as u16,
                     height: backend.window_size().h.clamp(0, u16::MAX as i32) as u16,
                     refresh_rate: 60_000,

@@ -9,8 +9,8 @@ use std::iter::zip;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{PresetSize, Struts};
-use niri_ipc::{ColumnDisplay, SizeChange, WindowLayout};
+use sol_config::{PresetSize, Struts};
+use sol_ipc::{ColumnDisplay, SizeChange, WindowLayout};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Serial, Size};
 
@@ -382,7 +382,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         activate: bool,
         width: ColumnWidth,
         is_full_width: bool,
-        _anim_config: Option<niri_config::Animation>,
+        _anim_config: Option<sol_config::Animation>,
     ) {
         let column = Column::new_with_tile(
             tile,
@@ -433,7 +433,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         _idx: Option<usize>,
         mut column: Column<W>,
         activate: bool,
-        _anim_config: Option<niri_config::Animation>,
+        _anim_config: Option<sol_config::Animation>,
     ) {
         column.update_config(
             self.view_size,
@@ -489,7 +489,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         column_idx: usize,
         _tile_idx: usize,
         _transaction: Transaction,
-        _anim_config: Option<niri_config::Animation>,
+        _anim_config: Option<sol_config::Animation>,
     ) -> RemovedTile<W> {
         let column = self.take_column_at(column_idx);
         super::RemovedTile {
@@ -590,7 +590,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn remove_column_by_idx(
         &mut self,
         column_idx: usize,
-        _anim_config: Option<niri_config::Animation>,
+        _anim_config: Option<sol_config::Animation>,
     ) -> Column<W> {
         self.take_column_at(column_idx)
     }
@@ -1449,7 +1449,7 @@ impl<W: LayoutElement> Column<W> {
     pub fn animate_move_from_with_config(
         &mut self,
         _from_x_offset: f64,
-        _config: niri_config::Animation,
+        _config: sol_config::Animation,
     ) {
         // No-op stub.
     }
@@ -1537,7 +1537,7 @@ fn compute_working_area(
 
 #[cfg(test)]
 mod tests {
-    use niri_config::FloatOrInt;
+    use sol_config::FloatOrInt;
     use smithay::utils::{Rectangle, Size};
 
     use super::*;

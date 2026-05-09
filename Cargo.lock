@@ -2234,108 +2234,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "niri"
-version = "26.4.0"
-dependencies = [
- "accesskit",
- "accesskit_unix",
- "anyhow",
- "approx 0.5.1",
- "arrayvec",
- "async-channel",
- "async-io",
- "atomic",
- "bitflags 2.11.1",
- "bytemuck",
- "calloop 0.14.4",
- "calloop-wayland-source 0.4.1",
- "clap",
- "clap_complete",
- "clap_complete_nushell",
- "directories",
- "drm-ffi",
- "fastrand",
- "futures-util",
- "git-version",
- "glam",
- "input",
- "insta",
- "keyframe",
- "libc",
- "libdisplay-info",
- "log",
- "niri-config",
- "niri-ipc",
- "ordered-float",
- "pango",
- "pangocairo",
- "pipewire",
- "pkg-config",
- "png",
- "profiling",
- "proptest",
- "proptest-derive",
- "rayon",
- "sd-notify",
- "serde",
- "serde_json",
- "smithay",
- "smithay-drm-extras",
- "tracing",
- "tracing-subscriber",
- "tracy-client",
- "wayland-backend",
- "wayland-client",
- "wayland-scanner",
- "wayland-server",
- "xcursor",
- "xshell",
- "zbus",
-]
-
-[[package]]
-name = "niri-config"
-version = "26.4.0"
-dependencies = [
- "bitflags 2.11.1",
- "csscolorparser",
- "diff",
- "insta",
- "knuffel",
- "miette",
- "niri-ipc",
- "pretty_assertions",
- "regex",
- "smithay",
- "tracing",
- "tracy-client",
-]
-
-[[package]]
-name = "niri-ipc"
-version = "26.4.0"
-dependencies = [
- "clap",
- "schemars",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "niri-visual-tests"
-version = "26.4.0"
-dependencies = [
- "anyhow",
- "gtk4",
- "libadwaita",
- "niri",
- "niri-config",
- "smithay",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "nix"
 version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3586,6 +3484,108 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd538fb6910ac1099850255cf94a94df6551fbdd602454387d0adb2d1ca6dead"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "sol"
+version = "26.4.0"
+dependencies = [
+ "accesskit",
+ "accesskit_unix",
+ "anyhow",
+ "approx 0.5.1",
+ "arrayvec",
+ "async-channel",
+ "async-io",
+ "atomic",
+ "bitflags 2.11.1",
+ "bytemuck",
+ "calloop 0.14.4",
+ "calloop-wayland-source 0.4.1",
+ "clap",
+ "clap_complete",
+ "clap_complete_nushell",
+ "directories",
+ "drm-ffi",
+ "fastrand",
+ "futures-util",
+ "git-version",
+ "glam",
+ "input",
+ "insta",
+ "keyframe",
+ "libc",
+ "libdisplay-info",
+ "log",
+ "ordered-float",
+ "pango",
+ "pangocairo",
+ "pipewire",
+ "pkg-config",
+ "png",
+ "profiling",
+ "proptest",
+ "proptest-derive",
+ "rayon",
+ "sd-notify",
+ "serde",
+ "serde_json",
+ "smithay",
+ "smithay-drm-extras",
+ "sol-config",
+ "sol-ipc",
+ "tracing",
+ "tracing-subscriber",
+ "tracy-client",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-scanner",
+ "wayland-server",
+ "xcursor",
+ "xshell",
+ "zbus",
+]
+
+[[package]]
+name = "sol-config"
+version = "26.4.0"
+dependencies = [
+ "bitflags 2.11.1",
+ "csscolorparser",
+ "diff",
+ "insta",
+ "knuffel",
+ "miette",
+ "pretty_assertions",
+ "regex",
+ "smithay",
+ "sol-ipc",
+ "tracing",
+ "tracy-client",
+]
+
+[[package]]
+name = "sol-ipc"
+version = "26.4.0"
+dependencies = [
+ "clap",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sol-visual-tests"
+version = "26.4.0"
+dependencies = [
+ "anyhow",
+ "gtk4",
+ "libadwaita",
+ "smithay",
+ "sol",
+ "sol-config",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

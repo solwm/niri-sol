@@ -1,8 +1,8 @@
 [workspace]
 members = [
-    "niri-config",
-    "niri-ipc",
-    "niri-visual-tests",
+    "sol-config",
+    "sol-ipc",
+    "sol-visual-tests",
 ]
 
 [workspace.package]
@@ -38,7 +38,7 @@ rev = "ff5fa7df392cecfba049ffed55cdaa4e98a8e7ef"
 # path = "../smithay/smithay-drm-extras"
 
 [package]
-name = "niri"
+name = "sol"
 version.workspace = true
 description.workspace = true
 authors.workspace = true
@@ -78,8 +78,8 @@ keyframe = { version = "1.1.1", default-features = false }
 libc = "0.2.185"
 libdisplay-info = "0.3.0"
 log = { version = "0.4.29", features = ["max_level_trace", "release_max_level_debug"] }
-niri-config = { version = "26.4.0", path = "niri-config" }
-niri-ipc = { version = "26.4.0", path = "niri-ipc", features = ["clap"] }
+sol-config = { version = "26.4.0", path = "sol-config" }
+sol-ipc = { version = "26.4.0", path = "sol-ipc", features = ["clap"] }
 ordered-float = "5.3.0"
 pango = { version = "0.21.5", features = ["v1_44"] }
 pangocairo = "0.21.5"
@@ -156,7 +156,7 @@ debug = "line-tables-only"
 overflow-checks = true
 lto = "thin"
 
-[profile.release.package.niri-config]
+[profile.release.package.sol-config]
 # knuffel with chomsky generates a metric ton of debuginfo.
 debug = false
 
@@ -167,12 +167,12 @@ similar.opt-level = 3
 [package.metadata.generate-rpm]
 version = "26.04"
 assets = [
-    { source = "target/release/niri", dest = "/usr/bin/", mode = "755" },
-    { source = "resources/niri-session", dest = "/usr/bin/", mode = "755" },
-    { source = "resources/niri.desktop", dest = "/usr/share/wayland-sessions/", mode = "644" },
-    { source = "resources/niri-portals.conf", dest = "/usr/share/xdg-desktop-portal/", mode = "644" },
-    { source = "resources/niri.service", dest = "/usr/lib/systemd/user/", mode = "644" },
-    { source = "resources/niri-shutdown.target", dest = "/usr/lib/systemd/user/", mode = "644" },
+    { source = "target/release/sol", dest = "/usr/bin/", mode = "755" },
+    { source = "resources/sol-session", dest = "/usr/bin/", mode = "755" },
+    { source = "resources/sol.desktop", dest = "/usr/share/wayland-sessions/", mode = "644" },
+    { source = "resources/sol-portals.conf", dest = "/usr/share/xdg-desktop-portal/", mode = "644" },
+    { source = "resources/sol.service", dest = "/usr/lib/systemd/user/", mode = "644" },
+    { source = "resources/sol-shutdown.target", dest = "/usr/lib/systemd/user/", mode = "644" },
 ]
 [package.metadata.generate-rpm.requires]
 alacritty = "*"
@@ -181,10 +181,10 @@ fuzzel = "*"
 [package.metadata.deb]
 depends = "alacritty, fuzzel"
 assets = [
-    ["target/release/niri", "usr/bin/", "755"],
-    ["resources/niri-session", "usr/bin/", "755"],
-    ["resources/niri.desktop", "/usr/share/wayland-sessions/", "644"],
-    ["resources/niri-portals.conf", "/usr/share/xdg-desktop-portal/", "644"],
-    ["resources/niri.service", "/usr/lib/systemd/user/", "644"],
-    ["resources/niri-shutdown.target", "/usr/lib/systemd/user/", "644"],
+    ["target/release/sol", "usr/bin/", "755"],
+    ["resources/sol-session", "usr/bin/", "755"],
+    ["resources/sol.desktop", "/usr/share/wayland-sessions/", "644"],
+    ["resources/sol-portals.conf", "/usr/share/xdg-desktop-portal/", "644"],
+    ["resources/sol.service", "/usr/lib/systemd/user/", "644"],
+    ["resources/sol-shutdown.target", "/usr/lib/systemd/user/", "644"],
 ]

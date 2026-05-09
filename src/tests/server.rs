@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use calloop::EventLoop;
-use niri_config::Config;
+use sol_config::Config;
 use smithay::reexports::wayland_server::Display;
 
 use crate::niri::State;

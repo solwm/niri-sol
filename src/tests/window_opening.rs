@@ -1,7 +1,7 @@
 use std::fmt::{self, Write as _};
 
 use insta::assert_snapshot;
-use niri_config::Config;
+use sol_config::Config;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::*;

@@ -1,4 +1,4 @@
-use niri_config::PresetSize;
+use sol_config::PresetSize;
 use smithay::desktop::Window;
 use smithay::output::Output;
 use smithay::wayland::shell::xdg::ToplevelSurface;

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use niri_config::{Config, ModKey};
+use sol_config::{Config, ModKey};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
@@ -37,7 +37,7 @@ pub enum RenderResult {
     Skipped,
 }
 
-pub type IpcOutputMap = HashMap<OutputId, niri_ipc::Output>;
+pub type IpcOutputMap = HashMap<OutputId, sol_ipc::Output>;
 
 static OUTPUT_ID_COUNTER: IdCounter = IdCounter::new();
 

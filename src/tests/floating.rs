@@ -1,7 +1,7 @@
 use client::ClientId;
 use insta::assert_snapshot;
-use niri_config::Config;
-use niri_ipc::SizeChange;
+use sol_config::Config;
+use sol_ipc::SizeChange;
 use smithay::utils::Point;
 use wayland_client::protocol::wl_surface::WlSurface;
 

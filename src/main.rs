@@ -15,23 +15,23 @@ use clap::{CommandFactory, Parser};
 use clap_complete::Shell;
 use clap_complete_nushell::Nushell;
 use directories::ProjectDirs;
-use niri::cli::{Cli, CompletionShell, Sub};
+use sol::cli::{Cli, CompletionShell, Sub};
 #[cfg(feature = "dbus")]
-use niri::dbus;
-use niri::ipc::client::handle_msg;
-use niri::niri::State;
-use niri::utils::spawning::{
+use sol::dbus;
+use sol::ipc::client::handle_msg;
+use sol::niri::State;
+use sol::utils::spawning::{
     spawn, spawn_sh, store_and_increase_nofile_rlimit, CHILD_DISPLAY, CHILD_ENV,
     REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE,
 };
-use niri::utils::{cause_panic, version, watcher, xwayland, IS_SYSTEMD_SERVICE};
-use niri_config::{Config, ConfigPath};
-use niri_ipc::socket::SOCKET_PATH_ENV;
+use sol::utils::{cause_panic, version, watcher, xwayland, IS_SYSTEMD_SERVICE};
+use sol_config::{Config, ConfigPath};
+use sol_ipc::socket::SOCKET_PATH_ENV;
 use sd_notify::NotifyState;
 use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
 
-const DEFAULT_LOG_FILTER: &str = "niri=debug,smithay::backend::renderer::gles=error";
+const DEFAULT_LOG_FILTER: &str = "sol=debug,smithay::backend::renderer::gles=error";
 
 #[cfg(feature = "profile-with-tracy-allocations")]
 #[global_allocator]
@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Set the current desktop for xdg-desktop-portal.
-        env::set_var("XDG_CURRENT_DESKTOP", "niri");
+        env::set_var("XDG_CURRENT_DESKTOP", "sol");
         // Ensure the session type is set to Wayland for xdg-autostart and Qt apps.
         env::set_var("XDG_SESSION_TYPE", "wayland");
     }
@@ -117,7 +117,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         clap_complete::generate(
                             Nushell,
                             &mut Cli::command(),
-                            "niri",
+                            "sol",
                             &mut io::stdout(),
                         );
                     }
@@ -126,7 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         clap_complete::generate(
                             generator,
                             &mut Cli::command(),
-                            "niri",
+                            "sol",
                             &mut io::stdout(),
                         );
                     }
@@ -137,7 +137,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Needs to be done before starting Tracy, so that it applies to Tracy's threads.
-    niri::utils::signals::block_early().unwrap();
+    sol::utils::signals::block_early().unwrap();
 
     // Avoid starting Tracy for the `niri msg` code path since starting/stopping Tracy is a bit
     // slow.
@@ -147,7 +147,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load the config.
     let config_path = config_path(cli.config);
-    env::remove_var("NIRI_CONFIG");
+    env::remove_var("SOL_CONFIG");
     let (config_created_at, config_load_result) = config_path.load_or_create();
     let config_errored = config_load_result.config.is_err();
     let mut config = config_load_result.config.unwrap_or_else(|err| {
@@ -166,7 +166,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut event_loop = EventLoop::<State>::try_new().unwrap();
 
     // Handle Ctrl+C and other signals.
-    niri::utils::signals::listen(&event_loop.handle());
+    sol::utils::signals::listen(&event_loop.handle());
 
     // Create the compositor.
     let display = Display::new().unwrap();
@@ -325,7 +325,7 @@ fn import_environment() {
 }
 
 fn env_config_path() -> Option<PathBuf> {
-    env::var_os("NIRI_CONFIG")
+    env::var_os("SOL_CONFIG")
         .filter(|x| !x.is_empty())
         .map(PathBuf::from)
 }
@@ -341,7 +341,7 @@ fn default_config_path() -> Option<PathBuf> {
         }
     }
 
-    let Some(dirs) = ProjectDirs::from("", "", "niri") else {
+    let Some(dirs) = ProjectDirs::from("", "", "sol") else {
         warn!("error retrieving home directory");
         return None;
     };
@@ -352,7 +352,7 @@ fn default_config_path() -> Option<PathBuf> {
 }
 
 fn system_config_path() -> PathBuf {
-    PathBuf::from("/etc/niri/config.kdl")
+    PathBuf::from("/etc/sol/config.kdl")
 }
 
 fn config_path(cli_path: Option<PathBuf>) -> ConfigPath {

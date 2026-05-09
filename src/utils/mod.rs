@@ -13,7 +13,7 @@ use anyhow::{ensure, Context};
 use bitflags::bitflags;
 use directories::UserDirs;
 use git_version::git_version;
-use niri_config::{Config, OutputName};
+use sol_config::{Config, OutputName};
 use smithay::backend::renderer::utils::{
     with_renderer_surface_state, RendererSurfaceStateUserData,
 };
@@ -205,20 +205,20 @@ pub fn output_size(output: &Output) -> Size<f64, Logical> {
     output_transform.transform_size(logical_size)
 }
 
-pub fn logical_output(output: &Output) -> niri_ipc::LogicalOutput {
+pub fn logical_output(output: &Output) -> sol_ipc::LogicalOutput {
     let loc = output.current_location();
     let size = output_size(output);
     let transform = match output.current_transform() {
-        Transform::Normal => niri_ipc::Transform::Normal,
-        Transform::_90 => niri_ipc::Transform::_90,
-        Transform::_180 => niri_ipc::Transform::_180,
-        Transform::_270 => niri_ipc::Transform::_270,
-        Transform::Flipped => niri_ipc::Transform::Flipped,
-        Transform::Flipped90 => niri_ipc::Transform::Flipped90,
-        Transform::Flipped180 => niri_ipc::Transform::Flipped180,
-        Transform::Flipped270 => niri_ipc::Transform::Flipped270,
+        Transform::Normal => sol_ipc::Transform::Normal,
+        Transform::_90 => sol_ipc::Transform::_90,
+        Transform::_180 => sol_ipc::Transform::_180,
+        Transform::_270 => sol_ipc::Transform::_270,
+        Transform::Flipped => sol_ipc::Transform::Flipped,
+        Transform::Flipped90 => sol_ipc::Transform::Flipped90,
+        Transform::Flipped180 => sol_ipc::Transform::Flipped180,
+        Transform::Flipped270 => sol_ipc::Transform::Flipped270,
     };
-    niri_ipc::LogicalOutput {
+    sol_ipc::LogicalOutput {
         x: loc.x,
         y: loc.y,
         width: size.w as u32,
@@ -237,16 +237,16 @@ pub fn panel_orientation(output: &Output) -> Transform {
         .unwrap_or(Transform::Normal)
 }
 
-pub fn ipc_transform_to_smithay(transform: niri_ipc::Transform) -> Transform {
+pub fn ipc_transform_to_smithay(transform: sol_ipc::Transform) -> Transform {
     match transform {
-        niri_ipc::Transform::Normal => Transform::Normal,
-        niri_ipc::Transform::_90 => Transform::_90,
-        niri_ipc::Transform::_180 => Transform::_180,
-        niri_ipc::Transform::_270 => Transform::_270,
-        niri_ipc::Transform::Flipped => Transform::Flipped,
-        niri_ipc::Transform::Flipped90 => Transform::Flipped90,
-        niri_ipc::Transform::Flipped180 => Transform::Flipped180,
-        niri_ipc::Transform::Flipped270 => Transform::Flipped270,
+        sol_ipc::Transform::Normal => Transform::Normal,
+        sol_ipc::Transform::_90 => Transform::_90,
+        sol_ipc::Transform::_180 => Transform::_180,
+        sol_ipc::Transform::_270 => Transform::_270,
+        sol_ipc::Transform::Flipped => Transform::Flipped,
+        sol_ipc::Transform::Flipped90 => Transform::Flipped90,
+        sol_ipc::Transform::Flipped180 => Transform::Flipped180,
+        sol_ipc::Transform::Flipped270 => Transform::Flipped270,
     }
 }
 
@@ -575,7 +575,7 @@ pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result
         Some("org.freedesktop.Notifications"),
         "Notify",
         &(
-            "niri",
+            "sol",
             0u32,
             image_url.as_ref().map(|url| url.as_str()).unwrap_or(""),
             "Screenshot captured",

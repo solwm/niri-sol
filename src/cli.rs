@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use clap_complete::Shell;
-use niri_ipc::{Action, OutputAction};
+use sol_ipc::{Action, OutputAction};
 
 use crate::utils::version;
 
@@ -13,9 +13,9 @@ use crate::utils::version;
 #[command(subcommand_value_name = "SUBCOMMAND")]
 #[command(subcommand_help_heading = "Subcommands")]
 pub struct Cli {
-    /// Path to config file (default: `$XDG_CONFIG_HOME/niri/config.kdl`).
+    /// Path to config file (default: `$XDG_CONFIG_HOME/sol/sol.conf`).
     ///
-    /// This can also be set with the `NIRI_CONFIG` environment variable. If both are set, the
+    /// This can also be set with the `SOL_CONFIG` environment variable. If both are set, the
     /// command line argument takes precedence.
     #[arg(short, long)]
     pub config: Option<PathBuf>,
@@ -36,7 +36,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Sub {
-    /// Communicate with the running niri instance.
+    /// Communicate with the running sol instance.
     Msg {
         #[command(subcommand)]
         msg: Msg,
@@ -46,9 +46,9 @@ pub enum Sub {
     },
     /// Validate the config file.
     Validate {
-        /// Path to config file (default: `$XDG_CONFIG_HOME/niri/config.kdl`).
+        /// Path to config file (default: `$XDG_CONFIG_HOME/sol/sol.conf`).
         ///
-        /// This can also be set with the `NIRI_CONFIG` environment variable. If both are set, the
+        /// This can also be set with the `SOL_CONFIG` environment variable. If both are set, the
         /// command line argument takes precedence.
         #[arg(short, long)]
         config: Option<PathBuf>,
@@ -92,7 +92,7 @@ pub enum Msg {
     Output {
         /// Output name.
         ///
-        /// Run `niri msg outputs` to see the output names.
+        /// Run `sol msg outputs` to see the output names.
         #[arg()]
         output: String,
         /// Configuration to apply.
@@ -101,9 +101,9 @@ pub enum Msg {
     },
     /// Start continuously receiving events from the compositor.
     EventStream,
-    /// Print the version of the running niri instance.
+    /// Print the version of the running sol instance.
     Version,
-    /// Request an error from the running niri instance.
+    /// Request an error from the running sol instance.
     RequestError,
     /// Print the overview state.
     OverviewState,
