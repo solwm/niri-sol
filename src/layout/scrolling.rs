@@ -886,33 +886,54 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.master.iter_mut().chain(self.stack.iter_mut())
     }
 
-    /// Returns the laid-out (x,y) origin for each column.
+    /// Returns the laid-out (x,y) origin and size for each column, with gaps applied as
+    /// outer margins (around the working area) and inner spacing (between tiles).
     fn column_layout(&self) -> Vec<(usize, Point<f64, Logical>, Size<f64, Logical>)> {
         let mut out = Vec::new();
         let work = self.working_area;
+        let g = self.options.layout.gaps;
         let n_stack = self.stack.len();
-        let master_w = if n_stack == 0 {
-            work.size.w
-        } else {
-            work.size.w * self.master_ratio
-        };
-        let stack_w = work.size.w - master_w;
+
+        let col_y = work.loc.y + g;
+        let col_h = f64::max(work.size.h - 2.0 * g, 1.0);
+
+        if n_stack == 0 {
+            if self.master.is_some() {
+                out.push((
+                    0,
+                    Point::from((work.loc.x + g, col_y)),
+                    Size::from((f64::max(work.size.w - 2.0 * g, 1.0), col_h)),
+                ));
+            }
+            return out;
+        }
+
+        // master + stack: 2 outer gaps + 1 between-column gap.
+        let avail_w = f64::max(work.size.w - 3.0 * g, 1.0);
+        let master_w = f64::max(avail_w * self.master_ratio, 1.0);
+        let stack_w = f64::max(avail_w - master_w, 1.0);
+
+        let master_x = work.loc.x + g;
+        let stack_x = work.loc.x + g + master_w + g;
+
         if self.master.is_some() {
             out.push((
                 0,
-                Point::from((work.loc.x, work.loc.y)),
-                Size::from((master_w, work.size.h)),
+                Point::from((master_x, col_y)),
+                Size::from((master_w, col_h)),
             ));
         }
-        if n_stack > 0 {
-            let stack_h = work.size.h / n_stack as f64;
-            for i in 0..n_stack {
-                out.push((
-                    i + 1,
-                    Point::from((work.loc.x + master_w, work.loc.y + stack_h * i as f64)),
-                    Size::from((stack_w, stack_h)),
-                ));
-            }
+
+        // Each stack tile plus (n_stack - 1) inner vertical gaps inside col_h.
+        let avail_h = f64::max(col_h - (n_stack as f64 - 1.0) * g, 1.0);
+        let stack_h = avail_h / n_stack as f64;
+        for i in 0..n_stack {
+            let y = col_y + (i as f64) * (stack_h + g);
+            out.push((
+                i + 1,
+                Point::from((stack_x, y)),
+                Size::from((stack_w, stack_h)),
+            ));
         }
         out
     }
