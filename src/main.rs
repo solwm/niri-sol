@@ -68,6 +68,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    // Become the subreaper for orphaned descendants. Spawn() double-forks every child
+    // so we don't have to waitpid; without a subreaper the grandchild reparents to
+    // init when the intermediate exits, which means sol can't kill it on shutdown
+    // and instances of long-running daemons (wp-cycle.sh, awww-daemon, waybar)
+    // accumulate across sol restarts. As subreaper we become the new parent, then
+    // sweep our remaining children with SIGTERM after the event loop exits.
+    //
+    // SAFETY: prctl is async-signal-safe and has no preconditions; the call only
+    // affects the current process and its future descendants.
+    unsafe {
+        if libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0 {
+            warn!(
+                "PR_SET_CHILD_SUBREAPER failed: {:?}",
+                std::io::Error::last_os_error()
+            );
+        }
+    }
+
     let cli = Cli::parse();
 
     if cli.session {
@@ -269,6 +287,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     event_loop
         .run(None, &mut state, |state| state.refresh_and_flush_clients())
         .unwrap();
+
+    // Reap spawned children. Sol set PR_SET_CHILD_SUBREAPER at startup so any
+    // grandchildren whose intermediate parent has exited are now sol's direct
+    // children; SIGTERM their session groups so wp-cycle.sh, awww-daemon, waybar
+    // etc. don't accumulate across sol restarts.
+    sol::utils::spawning::shutdown_spawned_children();
 
     Ok(())
 }

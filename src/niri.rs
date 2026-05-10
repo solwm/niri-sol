@@ -1465,6 +1465,15 @@ impl State {
 
         *CHILD_ENV.write().unwrap() = mem::take(&mut config.environment);
 
+        // Drop exec-once entries from the reloaded config. They've already been
+        // executed at startup; firing them again on every save of the config file
+        // would accumulate long-running daemons (wp-cycle.sh, awww-daemon, waybar)
+        // exactly the way unkilled-on-exit children do. Make the invariant
+        // explicit: a *live* config never carries exec-once — only the initial
+        // parse does, and main() consumes them once.
+        let _ = mem::take(&mut config.spawn_at_startup);
+        let _ = mem::take(&mut config.spawn_sh_at_startup);
+
         let mut reload_xkb = None;
         let mut libinput_config_changed = false;
         let mut output_config_changed = false;

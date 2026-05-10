@@ -62,6 +62,65 @@ pub fn restore_nofile_rlimit() {
     unsafe { setrlimit(RLIMIT_NOFILE, &rlim) };
 }
 
+/// Send SIGTERM to every child currently parented to sol.
+///
+/// Combined with `PR_SET_CHILD_SUBREAPER` set in `main`, this works for both the
+/// non-systemd and systemd spawn paths: each grandchild is reparented to sol when
+/// its intermediate parent exits (because sol is the nearest subreaper ancestor).
+/// Each grandchild also called `setsid()` before exec, so it leads its own session
+/// — `kill(-pgid, ...)` here SIGTERMs the grandchild *and* anything it spawned
+/// (e.g. `wp-cycle.sh` plus the `awww` invocations it shells out to).
+///
+/// Called once after the event loop exits in `main`. Best-effort: any error reading
+/// `/proc` or signaling a child is logged at trace level and swallowed — the user
+/// is shutting down, we don't want to noisily fail half-way through cleanup.
+pub fn shutdown_spawned_children() {
+    let pids = match collect_subreaped_children() {
+        Ok(p) => p,
+        Err(err) => {
+            trace!("could not enumerate child PIDs at shutdown: {err}");
+            return;
+        }
+    };
+    for pid in pids {
+        // Send to the negative PID = the child's process group. Because each
+        // grandchild called setsid() it is its own session leader, so pgid == pid.
+        // The signal reaches the bash script *and* any `awww`/etc. it forked.
+        unsafe {
+            let _ = libc::kill(-pid, libc::SIGTERM);
+        }
+    }
+}
+
+/// Walk `/proc/self/task/*/children` to collect every PID for which sol is the
+/// immediate parent. The `children` file is space-separated decimal PIDs; threads
+/// don't necessarily share child lists (each thread sees the children it forked),
+/// so we union across all of sol's threads.
+fn collect_subreaped_children() -> std::io::Result<Vec<libc::pid_t>> {
+    use std::fs;
+    let mut out = Vec::new();
+    for entry in fs::read_dir("/proc/self/task")? {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let mut path = entry.path();
+        path.push("children");
+        let contents = match fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        for tok in contents.split_ascii_whitespace() {
+            if let Ok(pid) = tok.parse::<libc::pid_t>() {
+                if pid > 0 && !out.contains(&pid) {
+                    out.push(pid);
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Spawns the command to run independently of the compositor.
 pub fn spawn<T: AsRef<OsStr> + Send + 'static>(command: Vec<T>, token: Option<XdgActivationToken>) {
     let _span = tracy_client::span!();
@@ -183,6 +242,17 @@ fn do_spawn(command: &OsStr, mut process: Command) -> Option<Child> {
                 _ => libc::_exit(0),
             }
 
+            // Grandchild — about to exec. setsid() puts it in its own session and
+            // process group so killing the pgid on sol shutdown reaps the whole tree
+            // (e.g. `wp-cycle.sh` plus any `awww` it ran). It also detaches from any
+            // controlling terminal, which is what daemons want anyway.
+            //
+            // Errors are swallowed: if setsid fails (only possible if we're already
+            // a session leader, which we shouldn't be after the fork above), the
+            // child still runs — sol just may not be able to kill its descendants
+            // on shutdown.
+            let _ = libc::setsid();
+
             restore_nofile_rlimit();
 
             Ok(())
@@ -289,7 +359,13 @@ mod systemd {
 
                 match libc::fork() {
                     -1 => return Err(io::Error::last_os_error()),
-                    0 => (),
+                    0 => {
+                        // Grandchild — about to exec. setsid() puts it in its own
+                        // session and process group so sol can `kill(-pgid, SIGTERM)`
+                        // it (and its descendants) on shutdown. See the matching
+                        // call in the non-systemd path for the full rationale.
+                        let _ = libc::setsid();
+                    }
                     grandchild_pid => {
                         // Send back the PID.
                         if let Some(pipe) = pipe_pid_write {
