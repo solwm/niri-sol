@@ -17,9 +17,11 @@ use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::Keysym;
 use tracing::warn;
 
+use crate::appearance::CornerRadius;
 use crate::binds::{Action, Bind, Key, Modifiers, Trigger, WorkspaceReference};
 use crate::misc::SpawnAtStartup;
 use crate::output::{Mode, Output};
+use crate::window_rule::WindowRule;
 use crate::Config;
 
 /// Output name we apply `mode` to. Sol's syntax has no per-output selector, so we hardcode the
@@ -134,6 +136,33 @@ fn apply_setting(config: &mut Config, key: &str, value: &str, lineno: usize) -> 
 
         "bind" => apply_bind(config, value, lineno)?,
 
+        "corner_radius" => {
+            // Global rounded-corner radius applied to every window. We synthesize a
+            // matchless `WindowRule` (rules with empty `matches` apply to everything)
+            // that sets both `geometry_corner_radius` and `clip_to_geometry = true`.
+            // The rest of the render path already supports rounded clipping + a
+            // matching focus-ring curve via the existing `BorderRenderElement` /
+            // `ClippedSurfaceRenderElement` shaders; this just plumbs a global value
+            // in as if the user had written one giant catch-all window-rule.
+            //
+            // Per-window window-rules can still override this because window-rules
+            // overlay last-wins, and our synthesized rule lives at index 0.
+            let radius = parse_f64(value, lineno, "corner_radius")? as f32;
+            if !radius.is_finite() || radius < 0. {
+                return Err(miette!(
+                    "line {lineno}: corner_radius {value:?}: must be a non-negative number"
+                ));
+            }
+            config.window_rules.insert(
+                0,
+                WindowRule {
+                    geometry_corner_radius: Some(CornerRadius::from(radius)),
+                    clip_to_geometry: Some(true),
+                    ..WindowRule::default()
+                },
+            );
+        }
+
         // ──── Parse-and-ignore (not yet implemented in niri's master-stack rework) ────
         "idle_timeout"
         | "spring_stiffness"
@@ -149,8 +178,7 @@ fn apply_setting(config: &mut Config, key: &str, value: &str, lineno: usize) -> 
         | "inactive_alpha"
         | "inactive_blur"
         | "inactive_blur_passes"
-        | "inactive_blur_radius"
-        | "corner_radius" => {}
+        | "inactive_blur_radius" => {}
 
         other => {
             warn!("sol config line {lineno}: unknown key `{other}` (ignored)");
