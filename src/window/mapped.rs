@@ -746,9 +746,18 @@ impl LayoutElement for Mapped {
         surface_anim_scale: Scale<f64>,
         radius: CornerRadius,
         xray_pos: XrayPos,
+        force_blur: bool,
         push: &mut dyn FnMut(BackgroundEffectElement),
     ) {
         let should_block_out = ctx.target.should_block_out(self.rules.block_out_from);
+        // When the layout asks us to force blur (unfocused window + global
+        // `inactive_blur`), override the resolved per-window-rule blur opt-in. If a
+        // window-rule already says `blur off` explicitly we still respect it — that's
+        // a user opt-out — so only flip `None` and `Some(true)` to `Some(true)`.
+        let mut effect = self.rules.background_effect;
+        if force_blur && effect.blur != Some(false) {
+            effect.blur = Some(true);
+        }
         background_effect::render_for_tile(
             ctx,
             None,
@@ -760,7 +769,7 @@ impl LayoutElement for Mapped {
             surface_anim_scale,
             self.blur_config,
             radius,
-            self.rules.background_effect,
+            effect,
             should_block_out,
             xray_pos,
             push,

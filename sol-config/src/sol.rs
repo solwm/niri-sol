@@ -163,6 +163,40 @@ fn apply_setting(config: &mut Config, key: &str, value: &str, lineno: usize) -> 
             );
         }
 
+        "inactive_alpha" => {
+            let a = parse_f64(value, lineno, "inactive_alpha")? as f32;
+            if !a.is_finite() || !(0. ..=1.).contains(&a) {
+                return Err(miette!(
+                    "line {lineno}: inactive_alpha {value:?}: must be in [0.0, 1.0]"
+                ));
+            }
+            config.inactive_alpha = Some(a);
+        }
+
+        "inactive_blur" => {
+            config.inactive_blur = parse_on_off(value, lineno, "inactive_blur")?;
+        }
+
+        "inactive_blur_passes" => {
+            config.blur.passes = value.parse::<u8>().map_err(|e| {
+                miette!("line {lineno}: inactive_blur_passes {value:?}: {e}")
+            })?;
+        }
+
+        "inactive_blur_radius" => {
+            // Map sol.conf's `inactive_blur_radius` to the existing global blur's
+            // Kawase `offset` parameter — the value that controls how blurry the
+            // sample looks per pass. Naming kept user-facing for sol.conf
+            // familiarity.
+            let r = parse_f64(value, lineno, "inactive_blur_radius")?;
+            if !r.is_finite() || r < 0. {
+                return Err(miette!(
+                    "line {lineno}: inactive_blur_radius {value:?}: must be a non-negative number"
+                ));
+            }
+            config.blur.offset = r;
+        }
+
         // ──── Parse-and-ignore (not yet implemented in niri's master-stack rework) ────
         "idle_timeout"
         | "spring_stiffness"
@@ -174,11 +208,7 @@ fn apply_setting(config: &mut Config, key: &str, value: &str, lineno: usize) -> 
         | "spring_stiffness_fade"
         | "spring_damping_fade"
         | "workspace_animation"
-        | "workspace_animation_duration_ms"
-        | "inactive_alpha"
-        | "inactive_blur"
-        | "inactive_blur_passes"
-        | "inactive_blur_radius" => {}
+        | "workspace_animation_duration_ms" => {}
 
         other => {
             warn!("sol config line {lineno}: unknown key `{other}` (ignored)");
@@ -190,6 +220,18 @@ fn apply_setting(config: &mut Config, key: &str, value: &str, lineno: usize) -> 
 fn parse_f64(s: &str, lineno: usize, name: &str) -> miette::Result<f64> {
     s.parse::<f64>()
         .map_err(|e| miette!("line {lineno}: {name} = {s:?}: {e}"))
+}
+
+/// Parse a Hyprland-style on/off value (also accepts true/false, 1/0, yes/no).
+/// Anything else is rejected with a clear error.
+fn parse_on_off(s: &str, lineno: usize, name: &str) -> miette::Result<bool> {
+    match s.to_ascii_lowercase().as_str() {
+        "on" | "true" | "yes" | "1" => Ok(true),
+        "off" | "false" | "no" | "0" => Ok(false),
+        _ => Err(miette!(
+            "line {lineno}: {name} {s:?}: expected on/off (true/false, yes/no, 1/0)"
+        )),
+    }
 }
 
 /// Sol's `remap = FROM, TO` is a directional one-key remap. We translate the common

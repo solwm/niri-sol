@@ -1027,6 +1027,7 @@ impl<W: LayoutElement> Tile<W> {
         location: Point<f64, Logical>,
         mut xray_pos: XrayPos,
         focus_ring: bool,
+        is_active: bool,
         push: &mut dyn FnMut(TileRenderElement<R>),
     ) {
         let _span = tracy_client::span!("Tile::render_inner");
@@ -1043,6 +1044,19 @@ impl<W: LayoutElement> Tile<W> {
             // Interpolate towards alpha = 1. at fullscreen.
             let p = fullscreen_progress as f32;
             alpha * (1. - p) + 1. * p
+        };
+
+        // Apply the global `inactive_alpha` config knob to unfocused windows on top
+        // of any per-window-rule opacity. Multiplying preserves rule-based dimming —
+        // a window rule that already pins a window at 0.5 will dim further when
+        // unfocused, which matches user intuition. Skipped at fullscreen because
+        // that path interpolates alpha back to 1 anyway.
+        let win_alpha = if !is_active {
+            let dim = self.options.inactive_alpha.unwrap_or(1.0).clamp(0., 1.);
+            let p = fullscreen_progress as f32;
+            win_alpha * (dim * (1. - p) + 1. * p)
+        } else {
+            win_alpha
         };
 
         // This is here rather than in render_offset() because render_offset() is currently assumed
@@ -1302,6 +1316,7 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         let surface_anim_scale = animated_window_size / window_size;
+        let force_blur = !is_active && self.options.inactive_blur;
         self.window.render_background_effect(
             ctx.as_gles(),
             area,
@@ -1310,6 +1325,7 @@ impl<W: LayoutElement> Tile<W> {
             surface_anim_scale,
             radius,
             xray_pos,
+            force_blur,
             &mut |elem| push(elem.into()),
         );
     }
@@ -1320,6 +1336,7 @@ impl<W: LayoutElement> Tile<W> {
         location: Point<f64, Logical>,
         xray_pos: XrayPos,
         focus_ring: bool,
+        is_active: bool,
         push: &mut dyn FnMut(TileRenderElement<R>),
     ) {
         let _span = tracy_client::span!("Tile::render");
@@ -1342,6 +1359,7 @@ impl<W: LayoutElement> Tile<W> {
                 Point::new(0., 0.),
                 xray_pos,
                 focus_ring,
+                is_active,
                 &mut |elem| elements.push(elem),
             );
             match open.render(
@@ -1369,6 +1387,7 @@ impl<W: LayoutElement> Tile<W> {
                 Point::new(0., 0.),
                 xray_pos,
                 focus_ring,
+                is_active,
                 &mut |elem| elements.push(elem),
             );
             match alpha.offscreen.render(ctx.renderer, scale, &elements) {
@@ -1387,7 +1406,9 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         if !pushed {
-            self.render_inner(ctx, location, xray_pos, focus_ring, &mut |elem| push(elem));
+            self.render_inner(ctx, location, xray_pos, focus_ring, is_active, &mut |elem| {
+                push(elem)
+            });
         }
     }
 
@@ -1425,6 +1446,10 @@ impl<W: LayoutElement> Tile<W> {
             Point::from((0., 0.)),
             xray_pos,
             false,
+            // Snapshots capture the window's appearance for later replay during
+            // animations; render as if active so we don't bake an inactive_alpha
+            // dim into the snapshot (the live render path will reapply it).
+            true,
             &mut |elem| contents.push(elem),
         );
 
@@ -1476,6 +1501,8 @@ impl<W: LayoutElement> Tile<W> {
                     Point::from((0., 0.)),
                     xray_pos,
                     false,
+                    // Snapshot — render as active; see comment above.
+                    true,
                     &mut |elem| contents.push(elem),
                 );
                 contents_with_blocked_out_bg = Some(contents);
@@ -1496,6 +1523,8 @@ impl<W: LayoutElement> Tile<W> {
             Point::from((0., 0.)),
             xray_pos,
             false,
+            // Snapshot — render as active; see comment above.
+            true,
             &mut |elem| blocked_out_contents.push(elem),
         );
 

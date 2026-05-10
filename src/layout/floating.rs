@@ -1076,13 +1076,25 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let active = self.active_window_id.clone();
         for (tile, tile_pos) in self.tiles_with_render_positions() {
-            // For the active tile, draw the focus ring.
-            let focus_ring = focus_ring && Some(tile.window().id()) == active.as_ref();
+            let is_active = Some(tile.window().id()) == active.as_ref();
+            // For the active tile, draw the focus ring (only when the global
+            // focus_ring rendering toggle is also on).
+            let draw_focus_ring = focus_ring && is_active;
 
+            // The incoming xray_pos is workspace-level. Offset it by `tile_pos`
+            // (the tile's position within the workspace) so the blur backdrop
+            // samples the wallpaper directly behind THIS tile, not behind the
+            // workspace origin. Without this every unfocused window's blur draws
+            // the same patch from the top-left of the wallpaper.
             let xray_pos = xray_pos.offset(tile_pos);
-            tile.render(ctx.r(), tile_pos, xray_pos, focus_ring, &mut |elem| {
-                push(elem.into())
-            });
+            tile.render(
+                ctx.r(),
+                tile_pos,
+                xray_pos,
+                draw_focus_ring,
+                is_active,
+                &mut |elem| push(elem.into()),
+            );
         }
     }
 

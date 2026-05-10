@@ -93,6 +93,13 @@ pub struct Config {
     pub debug: Debug,
     pub workspaces: Vec<Workspace>,
     pub recent_windows: RecentWindows,
+
+    /// Multiplier applied to unfocused windows' final alpha. `None` ≡ 1.0 (no dim).
+    /// Sourced from sol.conf `inactive_alpha`.
+    pub inactive_alpha: Option<f32>,
+    /// Force the background-blur effect on unfocused windows even when their
+    /// surface / window-rule didn't request it. Sourced from sol.conf `inactive_blur`.
+    pub inactive_blur: bool,
 }
 
 #[derive(Debug, Clone)]

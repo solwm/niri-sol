@@ -1126,11 +1126,20 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         if let Some((take_idx, area)) = self.takeover() {
             if let Some(col) = self.column_by_unified_idx(take_idx) {
-                let is_active = focus_ring && Some(take_idx) == focused_idx;
-                col.tile
-                    .render(ctx.r(), area.loc, xray_pos, is_active, &mut |elem| {
-                        push(ScrollingSpaceRenderElement::Tile(elem))
-                    });
+                let is_active = Some(take_idx) == focused_idx;
+                let draw_focus_ring = focus_ring && is_active;
+                // Offset xray_pos so the blur samples wallpaper *behind* this tile
+                // rather than at the workspace's origin. See the matching comment
+                // in `floating.rs`.
+                let xray_pos = xray_pos.offset(area.loc);
+                col.tile.render(
+                    ctx.r(),
+                    area.loc,
+                    xray_pos,
+                    draw_focus_ring,
+                    is_active,
+                    &mut |elem| push(ScrollingSpaceRenderElement::Tile(elem)),
+                );
             }
             return;
         }
@@ -1140,11 +1149,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let Some(col) = self.column_by_unified_idx(unified_idx) else {
                 continue;
             };
-            let is_active = focus_ring && Some(unified_idx) == focused_idx;
-            col.tile
-                .render(ctx.r(), pos, xray_pos, is_active, &mut |elem| {
-                    push(ScrollingSpaceRenderElement::Tile(elem))
-                });
+            let is_active = Some(unified_idx) == focused_idx;
+            let draw_focus_ring = focus_ring && is_active;
+            // Offset xray_pos by the tile's position within the workspace.
+            let xray_pos = xray_pos.offset(pos);
+            col.tile.render(
+                ctx.r(),
+                pos,
+                xray_pos,
+                draw_focus_ring,
+                is_active,
+                &mut |elem| push(ScrollingSpaceRenderElement::Tile(elem)),
+            );
         }
     }
 

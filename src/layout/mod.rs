@@ -199,6 +199,10 @@ pub trait LayoutElement {
     }
 
     /// Renders the background effect behind the main surface of the element.
+    ///
+    /// `force_blur` is set by the layout when the window is unfocused and the user
+    /// configured `inactive_blur = on`; it overrides the per-window-rule blur
+    /// decision so the frosted-glass effect engages even without an explicit rule.
     #[allow(clippy::too_many_arguments)]
     fn render_background_effect(
         &self,
@@ -209,6 +213,7 @@ pub trait LayoutElement {
         _surface_anim_scale: Scale<f64>,
         _radius: CornerRadius,
         _xray_pos: XrayPos,
+        _force_blur: bool,
         _push: &mut dyn FnMut(BackgroundEffectElement),
     ) {
     }
@@ -393,6 +398,10 @@ pub struct Options {
     pub gestures: sol_config::Gestures,
     pub overview: sol_config::Overview,
     pub blur: sol_config::Blur,
+    /// Multiplier applied to unfocused windows' final alpha. `None` ≡ 1.0 (no dim).
+    pub inactive_alpha: Option<f32>,
+    /// Force the background-blur effect on unfocused windows.
+    pub inactive_blur: bool,
     // Debug flags.
     pub disable_resize_throttling: bool,
     pub disable_transactions: bool,
@@ -654,6 +663,8 @@ impl Options {
             gestures: config.gestures,
             overview: config.overview,
             blur: config.blur,
+            inactive_alpha: config.inactive_alpha,
+            inactive_blur: config.inactive_blur,
             disable_resize_throttling: config.debug.disable_resize_throttling,
             disable_transactions: config.debug.disable_transactions,
             deactivate_unfocused_windows: config.debug.deactivate_unfocused_windows,
@@ -4831,7 +4842,7 @@ impl<W: LayoutElement> Layout<W> {
 
         move_
             .tile
-            .render(ctx, pos_in_backdrop, xray_pos, true, &mut |elem| {
+            .render(ctx, pos_in_backdrop, xray_pos, true, true, &mut |elem| {
                 push(RescaleRenderElement::from_element(
                     elem,
                     pos_in_backdrop.to_physical_precise_round(scale),
