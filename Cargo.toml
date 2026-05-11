@@ -3,6 +3,7 @@ members = [
     "sol-config",
     "sol-ipc",
     "sol-visual-tests",
+    "sol-wallpaper",
 ]
 
 [workspace.package]

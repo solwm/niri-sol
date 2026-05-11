@@ -100,6 +100,12 @@ pub struct Config {
     /// Force the background-blur effect on unfocused windows even when their
     /// surface / window-rule didn't request it. Sourced from sol.conf `inactive_blur`.
     pub inactive_blur: bool,
+
+    /// If true, sol auto-spawns `sol-wallpaper` at startup (reaped on exit
+    /// like an exec-once entry). The daemon reads its own config from
+    /// `$XDG_CONFIG_HOME/sol/wallpaper.conf`. Sourced from sol.conf
+    /// `wallpaper_daemon`.
+    pub wallpaper_daemon: bool,
 }
 
 #[derive(Debug, Clone)]

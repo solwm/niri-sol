@@ -177,6 +177,10 @@ fn apply_setting(config: &mut Config, key: &str, value: &str, lineno: usize) -> 
             config.inactive_blur = parse_on_off(value, lineno, "inactive_blur")?;
         }
 
+        "wallpaper_daemon" => {
+            config.wallpaper_daemon = parse_on_off(value, lineno, "wallpaper_daemon")?;
+        }
+
         "inactive_blur_passes" => {
             config.blur.passes = value.parse::<u8>().map_err(|e| {
                 miette!("line {lineno}: inactive_blur_passes {value:?}: {e}")

@@ -174,9 +174,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     let config_includes = config_load_result.includes;
 
-    let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
+    let mut spawn_at_startup = mem::take(&mut config.spawn_at_startup);
     let spawn_sh_at_startup = mem::take(&mut config.spawn_sh_at_startup);
     *CHILD_ENV.write().unwrap() = mem::take(&mut config.environment);
+
+    // sol.conf `wallpaper_daemon = on` ⇒ launch sol-wallpaper alongside the
+    // other startup commands. Daemon reads its own config at
+    // $XDG_CONFIG_HOME/sol/wallpaper.conf.
+    if config.wallpaper_daemon {
+        spawn_at_startup.push(sol_config::SpawnAtStartup {
+            command: vec!["sol-wallpaper".to_string()],
+        });
+    }
 
     store_and_increase_nofile_rlimit();
 
