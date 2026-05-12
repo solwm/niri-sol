@@ -2050,6 +2050,54 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
+    /// Run a `Layout::move_*_animated` call with renderer + xray context
+    /// set up for the active output. The closure receives `(layout, renderer,
+    /// xray, has_blocked_out)` and should invoke one of the animated methods.
+    pub fn move_focused_animated(
+        &mut self,
+        op: impl FnOnce(
+            &mut crate::layout::Layout<Mapped>,
+            &mut smithay::backend::renderer::gles::GlesRenderer,
+            Option<&mut crate::render_helpers::xray::Xray>,
+            bool,
+        ),
+    ) {
+        let output = self.niri.layout.active_output().cloned();
+        self.niri.update_xray_render_elements(output.as_ref());
+
+        self.backend.with_primary_renderer(|renderer| {
+            if let Some(output) = output {
+                let mut ctx = RenderCtx {
+                    target: RenderTarget::Output,
+                    renderer,
+                    xray: None,
+                };
+                self.niri.fill_xray_elements(ctx.r(), &output);
+
+                let has_blocked_out = self.niri.has_blocked_out_background_layers(&output);
+                if has_blocked_out {
+                    let screencast_ctx = RenderCtx {
+                        target: RenderTarget::Screencast,
+                        ..ctx.r()
+                    };
+                    self.niri.fill_xray_elements(screencast_ctx, &output);
+                }
+
+                let state = self.niri.output_state.get_mut(&output).unwrap();
+                op(
+                    &mut self.niri.layout,
+                    renderer,
+                    Some(&mut state.xray),
+                    has_blocked_out,
+                );
+
+                self.niri.clear_xray_elements(&output);
+            } else {
+                op(&mut self.niri.layout, renderer, None, false);
+            }
+        });
+    }
+
     pub fn store_unmap_snapshot(&mut self, window: &Window, output: Option<&Output>) {
         // The unmapping tile may have an xray background, in which case we will render xray
         // elements, so they need to be updated.

@@ -1427,7 +1427,7 @@ impl<W: LayoutElement> Tile<W> {
             Some(self.render_snapshot(renderer, xray, xray_has_blocked_out_layers, xray_pos));
     }
 
-    fn render_snapshot(
+    pub fn render_snapshot(
         &self,
         renderer: &mut GlesRenderer,
         mut xray: Option<&mut Xray>,

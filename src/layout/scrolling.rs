@@ -12,22 +12,34 @@ use std::time::Duration;
 use sol_config::{PresetSize, Struts};
 use sol_ipc::{ColumnDisplay, SizeChange, WindowLayout};
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Logical, Point, Rectangle, Serial, Size};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::monitor::InsertPosition;
+use super::moving_snapshot::{MovingSnapshot, MovingSnapshotRenderElement};
 use super::tile::{Tile, TileRenderElement};
 use super::workspace::InteractiveResize;
 use super::{HitType, LayoutElement, Options, RemovedTile};
-use crate::animation::Clock;
+use crate::animation::{Animation, Clock};
 use crate::layout::SizingMode;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::render_helpers::xray::XrayPos;
+use crate::render_helpers::xray::{Xray, XrayPos};
 use crate::render_helpers::RenderCtx;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::ResizeEdge;
 use crate::window::ResolvedWindowRules;
+
+/// Build an easing `Animation` config from sol.conf's crossfade values.
+fn crossfade_anim_kind(cfg: sol_config::Crossfade) -> sol_config::Animation {
+    sol_config::Animation {
+        off: cfg.duration_ms == 0,
+        kind: sol_config::animations::Kind::Easing(sol_config::animations::EasingParams {
+            duration_ms: cfg.duration_ms,
+            curve: cfg.curve,
+        }),
+    }
+}
 
 /// Master-stack space for windows.
 #[derive(Debug)]
@@ -70,12 +82,18 @@ pub struct ScrollingSpace<W: LayoutElement> {
 
     /// Always Static(0.0) for the master-stack engine; kept for API compatibility.
     view_offset: ViewOffset,
+
+    /// Per-tile snapshots held at their pre-move slot, fading out while the
+    /// live tile fades in at its new slot. Populated by `move_left_animated`
+    /// and friends; drained as the fade-out animation completes.
+    moving_snapshots: Vec<MovingSnapshot>,
 }
 
 niri_render_elements! {
     ScrollingSpaceRenderElement<R> => {
         Tile = TileRenderElement<R>,
         ClosingWindow = ClosingWindowRenderElement,
+        MovingSnapshot = MovingSnapshotRenderElement,
     }
 }
 
@@ -167,6 +185,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             clock,
             options,
             view_offset: ViewOffset::Static(0.0),
+            moving_snapshots: Vec::new(),
         }
     }
 
@@ -215,6 +234,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             closing.advance_animations();
             closing.are_animations_ongoing()
         });
+        self.moving_snapshots.retain_mut(|snap| {
+            snap.advance_animations();
+            !snap.is_done()
+        });
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
@@ -223,6 +246,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .map_or(false, Column::are_animations_ongoing)
             || self.stack.iter().any(Column::are_animations_ongoing)
             || !self.closing_windows.is_empty()
+            || !self.moving_snapshots.is_empty()
     }
 
     pub fn are_transitions_ongoing(&self) -> bool {
@@ -231,6 +255,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .map_or(false, Column::are_transitions_ongoing)
             || self.stack.iter().any(Column::are_transitions_ongoing)
             || !self.closing_windows.is_empty()
+            || !self.moving_snapshots.is_empty()
     }
 
     pub fn update_render_elements(&mut self, is_active: bool) {
@@ -787,6 +812,154 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
+    /// Crossfade-animated variant of `move_left` — captures per-tile snapshots
+    /// at the old slots before the swap, performs the swap, then drives a
+    /// fade-out of the snapshots at the old slots while the live tiles fade
+    /// in at their new slots. Falls back to instant swap when the configured
+    /// `crossfade_duration_ms` is 0.
+    pub fn move_left_animated(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        xray: Option<&mut Xray>,
+        xray_has_blocked_out_layers: bool,
+        xray_pos: XrayPos,
+    ) -> bool {
+        self.swap_with_crossfade(renderer, xray, xray_has_blocked_out_layers, xray_pos, |s| {
+            s.move_left()
+        })
+    }
+
+    /// Crossfade-animated variant of `move_right`.
+    pub fn move_right_animated(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        xray: Option<&mut Xray>,
+        xray_has_blocked_out_layers: bool,
+        xray_pos: XrayPos,
+    ) -> bool {
+        self.swap_with_crossfade(renderer, xray, xray_has_blocked_out_layers, xray_pos, |s| {
+            s.move_right()
+        })
+    }
+
+    /// Crossfade-animated variant of `move_up`.
+    pub fn move_up_animated(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        xray: Option<&mut Xray>,
+        xray_has_blocked_out_layers: bool,
+        xray_pos: XrayPos,
+    ) -> bool {
+        self.swap_with_crossfade(renderer, xray, xray_has_blocked_out_layers, xray_pos, |s| {
+            s.move_up()
+        })
+    }
+
+    /// Crossfade-animated variant of `move_down`.
+    pub fn move_down_animated(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        xray: Option<&mut Xray>,
+        xray_has_blocked_out_layers: bool,
+        xray_pos: XrayPos,
+    ) -> bool {
+        self.swap_with_crossfade(renderer, xray, xray_has_blocked_out_layers, xray_pos, |s| {
+            s.move_down()
+        })
+    }
+
+    /// Shared implementation: snapshot tiles → run `mutate` → diff layout →
+    /// spawn fade-out snapshots at old positions + fade-in alpha on tiles
+    /// whose slot changed.
+    fn swap_with_crossfade(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        mut xray: Option<&mut Xray>,
+        xray_has_blocked_out_layers: bool,
+        xray_pos: XrayPos,
+        mutate: impl FnOnce(&mut Self) -> bool,
+    ) -> bool {
+        // Duration 0 ⇒ snap, no animation.
+        if self.options.crossfade.duration_ms == 0 {
+            return mutate(self);
+        }
+
+        // 1. Capture each tile's pre-swap slot position + a frozen render
+        //    snapshot of its current appearance.
+        let pre_layout = self.column_layout();
+        let mut captured: Vec<(W::Id, Point<f64, Logical>, super::tile::TileRenderSnapshot)> =
+            Vec::with_capacity(pre_layout.len());
+        for (uidx, pos, _) in &pre_layout {
+            let Some(col) = self.column_by_unified_idx(*uidx) else {
+                continue;
+            };
+            let id = col.tile.window().id().clone();
+            // Offset xray_pos by the tile's slot — same as the live render
+            // path in `render()` — so the snapshot's blur backdrop samples
+            // the wallpaper region behind THIS tile, not the workspace's
+            // top-left.
+            let tile_xray_pos = xray_pos.offset(*pos);
+            let snap = col.tile.render_snapshot(
+                renderer,
+                xray.as_deref_mut(),
+                xray_has_blocked_out_layers,
+                tile_xray_pos,
+            );
+            captured.push((id, *pos, snap));
+        }
+
+        // 2. Run the mutation.
+        if !mutate(self) {
+            return false;
+        }
+
+        // 3. Diff pre / post positions. For each tile whose slot changed,
+        //    bake the captured snapshot into a texture, drop it at the old
+        //    slot with a fade-out, and call `animate_alpha(0, 1)` on the
+        //    live tile to fade it in at the new slot.
+        let post_layout = self.column_layout();
+        let scale = Scale::from(self.scale);
+        let anim_kind = crossfade_anim_kind(self.options.crossfade);
+
+        for (id, old_pos, snapshot) in captured {
+            // Find this id's post-swap slot.
+            let new_pos = post_layout.iter().find_map(|(uidx, pos, _)| {
+                self.column_by_unified_idx(*uidx)
+                    .and_then(|c| (c.tile.window().id() == &id).then_some(*pos))
+            });
+            let Some(new_pos) = new_pos else {
+                continue;
+            };
+            let delta = old_pos - new_pos;
+            if delta.x.abs() < 0.5 && delta.y.abs() < 0.5 {
+                continue;
+            }
+
+            // Fade-out snapshot at the old slot.
+            let fade_out = Animation::new(self.clock.clone(), 0., 1., 0., anim_kind);
+            match MovingSnapshot::new(renderer, snapshot, scale, old_pos, fade_out) {
+                Ok(snap) => self.moving_snapshots.push(snap),
+                Err(err) => warn!("crossfade: error baking moving snapshot: {err:?}"),
+            }
+
+            // Fade-in the live tile at its new slot.
+            if let Some(col) = self.find_column_by_id_mut(&id) {
+                col.tile.animate_alpha(0., 1., anim_kind);
+            }
+        }
+
+        true
+    }
+
+    fn find_column_by_id_mut(&mut self, id: &W::Id) -> Option<&mut Column<W>> {
+        if let Some(m) = self.master.as_mut() {
+            if m.tile.window().id() == id {
+                return Some(m);
+            }
+        }
+        self.stack.iter_mut().find(|c| c.tile.window().id() == id)
+    }
+
     pub fn move_right(&mut self) -> bool {
         match self.focus {
             Focus::Master => {
@@ -1142,6 +1315,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 );
             }
             return;
+        }
+
+        // Crossfade: render fading-out snapshots from the most recent layout
+        // mutation (master↔stack swap, stack reorder) FIRST so they sit on top
+        // of the live tiles. Each snapshot is anchored at a tile's *old* slot
+        // and fades out as the matching live tile fades in at its new slot.
+        let scale = Scale::from(self.scale);
+        for snap in &self.moving_snapshots {
+            if let Some(elem) = snap.render(scale) {
+                push(ScrollingSpaceRenderElement::MovingSnapshot(elem));
+            }
         }
 
         let layout = self.column_layout();

@@ -1096,6 +1096,86 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn move_left_animated(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        xray: Option<&mut Xray>,
+        xray_has_blocked_out_layers: bool,
+        xray_pos: XrayPos,
+    ) -> bool {
+        if self.floating_is_active.get() {
+            self.floating.move_left();
+            true
+        } else {
+            self.scrolling.move_left_animated(
+                renderer,
+                xray,
+                xray_has_blocked_out_layers,
+                xray_pos,
+            )
+        }
+    }
+
+    pub fn move_right_animated(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        xray: Option<&mut Xray>,
+        xray_has_blocked_out_layers: bool,
+        xray_pos: XrayPos,
+    ) -> bool {
+        if self.floating_is_active.get() {
+            self.floating.move_right();
+            true
+        } else {
+            self.scrolling.move_right_animated(
+                renderer,
+                xray,
+                xray_has_blocked_out_layers,
+                xray_pos,
+            )
+        }
+    }
+
+    pub fn move_down_animated(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        xray: Option<&mut Xray>,
+        xray_has_blocked_out_layers: bool,
+        xray_pos: XrayPos,
+    ) -> bool {
+        if self.floating_is_active.get() {
+            self.floating.move_down();
+            true
+        } else {
+            self.scrolling.move_down_animated(
+                renderer,
+                xray,
+                xray_has_blocked_out_layers,
+                xray_pos,
+            )
+        }
+    }
+
+    pub fn move_up_animated(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        xray: Option<&mut Xray>,
+        xray_has_blocked_out_layers: bool,
+        xray_pos: XrayPos,
+    ) -> bool {
+        if self.floating_is_active.get() {
+            self.floating.move_up();
+            true
+        } else {
+            self.scrolling.move_up_animated(
+                renderer,
+                xray,
+                xray_has_blocked_out_layers,
+                xray_pos,
+            )
+        }
+    }
+
     pub fn consume_or_expel_window_left(&mut self, window: Option<&W::Id>) {
         if window.map_or(self.floating_is_active.get(), |id| {
             self.floating.has_window(id)

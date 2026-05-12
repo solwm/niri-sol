@@ -106,6 +106,29 @@ pub struct Config {
     /// `$XDG_CONFIG_HOME/sol/wallpaper.conf`. Sourced from sol.conf
     /// `wallpaper_daemon`.
     pub wallpaper_daemon: bool,
+
+    /// Tile-movement crossfade animation. Sourced from sol.conf
+    /// `crossfade_duration_ms` + `crossfade_curve`. When a tile changes slots
+    /// (master↔stack swap, stack reorder), the layout snapshots the tile's
+    /// old appearance at the old slot and fades it out over `duration_ms`
+    /// while the live tile fades in at the new slot. Duration 0 disables.
+    pub crossfade: Crossfade,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Crossfade {
+    pub duration_ms: u32,
+    pub curve: animations::Curve,
+}
+
+impl Default for Crossfade {
+    fn default() -> Self {
+        Self {
+            // 200ms — feels snappy but visible. User can override.
+            duration_ms: 200,
+            curve: animations::Curve::EaseOutQuad,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

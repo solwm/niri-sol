@@ -919,7 +919,9 @@ impl State {
                 if self.niri.screenshot_ui.is_open() {
                     self.niri.screenshot_ui.move_left();
                 } else {
-                    self.niri.layout.move_left();
+                    self.move_focused_animated(|layout, r, x, h| {
+                        layout.move_left_animated(r, x, h);
+                    });
                     self.maybe_warp_cursor_to_focus();
                 }
 
@@ -930,7 +932,9 @@ impl State {
                 if self.niri.screenshot_ui.is_open() {
                     self.niri.screenshot_ui.move_right();
                 } else {
-                    self.niri.layout.move_right();
+                    self.move_focused_animated(|layout, r, x, h| {
+                        layout.move_right_animated(r, x, h);
+                    });
                     self.maybe_warp_cursor_to_focus();
                 }
 
@@ -961,7 +965,9 @@ impl State {
                         self.maybe_warp_cursor_to_focus();
                     }
                 } else {
-                    self.niri.layout.move_left();
+                    self.move_focused_animated(|layout, r, x, h| {
+                        layout.move_left_animated(r, x, h);
+                    });
                     self.maybe_warp_cursor_to_focus();
                 }
 
@@ -980,7 +986,9 @@ impl State {
                         self.maybe_warp_cursor_to_focus();
                     }
                 } else {
-                    self.niri.layout.move_right();
+                    self.move_focused_animated(|layout, r, x, h| {
+                        layout.move_right_animated(r, x, h);
+                    });
                     self.maybe_warp_cursor_to_focus();
                 }
 
@@ -991,7 +999,9 @@ impl State {
                 if self.niri.screenshot_ui.is_open() {
                     self.niri.screenshot_ui.move_down();
                 } else {
-                    self.niri.layout.move_down();
+                    self.move_focused_animated(|layout, r, x, h| {
+                        layout.move_down_animated(r, x, h);
+                    });
                     self.maybe_warp_cursor_to_focus();
                 }
 
@@ -1002,7 +1012,9 @@ impl State {
                 if self.niri.screenshot_ui.is_open() {
                     self.niri.screenshot_ui.move_up();
                 } else {
-                    self.niri.layout.move_up();
+                    self.move_focused_animated(|layout, r, x, h| {
+                        layout.move_up_animated(r, x, h);
+                    });
                     self.maybe_warp_cursor_to_focus();
                 }
 

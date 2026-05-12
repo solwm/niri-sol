@@ -80,6 +80,7 @@ pub mod floating;
 pub mod focus_ring;
 pub mod insert_hint_element;
 pub mod monitor;
+pub mod moving_snapshot;
 pub mod opening_window;
 pub mod scrolling;
 pub mod shadow;
@@ -402,6 +403,8 @@ pub struct Options {
     pub inactive_alpha: Option<f32>,
     /// Force the background-blur effect on unfocused windows.
     pub inactive_blur: bool,
+    /// Tile-movement crossfade params (duration + curve).
+    pub crossfade: sol_config::Crossfade,
     // Debug flags.
     pub disable_resize_throttling: bool,
     pub disable_transactions: bool,
@@ -665,6 +668,7 @@ impl Options {
             blur: config.blur,
             inactive_alpha: config.inactive_alpha,
             inactive_blur: config.inactive_blur,
+            crossfade: config.crossfade,
             disable_resize_throttling: config.debug.disable_resize_throttling,
             disable_transactions: config.debug.disable_transactions,
             deactivate_unfocused_windows: config.debug.deactivate_unfocused_windows,
@@ -1868,6 +1872,118 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         workspace.move_up();
+    }
+
+    /// Crossfade-animated variants of `move_left`/`right`/`down`/`up`. The
+    /// xray plumbing matches `store_unmap_snapshot` — the per-tile snapshot
+    /// capture inside the swap uses xray to materialize blur/wallpaper
+    /// backgrounds correctly at the moment of the move.
+    pub fn move_left_animated(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        xray: Option<&mut Xray>,
+        xray_has_blocked_out_layers: bool,
+    ) {
+        let zoom = self.overview_zoom();
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            return;
+        };
+        let mon = &mut monitors[*active_monitor_idx];
+        let active_idx = mon.active_workspace_idx;
+        let Some((ws, geo)) = mon
+            .workspaces_with_render_geo_mut(false)
+            .nth(active_idx)
+        else {
+            return;
+        };
+        let xray_pos = XrayPos::new(geo.loc, zoom);
+        ws.move_left_animated(renderer, xray, xray_has_blocked_out_layers, xray_pos);
+    }
+
+    pub fn move_right_animated(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        xray: Option<&mut Xray>,
+        xray_has_blocked_out_layers: bool,
+    ) {
+        let zoom = self.overview_zoom();
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            return;
+        };
+        let mon = &mut monitors[*active_monitor_idx];
+        let active_idx = mon.active_workspace_idx;
+        let Some((ws, geo)) = mon
+            .workspaces_with_render_geo_mut(false)
+            .nth(active_idx)
+        else {
+            return;
+        };
+        let xray_pos = XrayPos::new(geo.loc, zoom);
+        ws.move_right_animated(renderer, xray, xray_has_blocked_out_layers, xray_pos);
+    }
+
+    pub fn move_down_animated(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        xray: Option<&mut Xray>,
+        xray_has_blocked_out_layers: bool,
+    ) {
+        let zoom = self.overview_zoom();
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            return;
+        };
+        let mon = &mut monitors[*active_monitor_idx];
+        let active_idx = mon.active_workspace_idx;
+        let Some((ws, geo)) = mon
+            .workspaces_with_render_geo_mut(false)
+            .nth(active_idx)
+        else {
+            return;
+        };
+        let xray_pos = XrayPos::new(geo.loc, zoom);
+        ws.move_down_animated(renderer, xray, xray_has_blocked_out_layers, xray_pos);
+    }
+
+    pub fn move_up_animated(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        xray: Option<&mut Xray>,
+        xray_has_blocked_out_layers: bool,
+    ) {
+        let zoom = self.overview_zoom();
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            return;
+        };
+        let mon = &mut monitors[*active_monitor_idx];
+        let active_idx = mon.active_workspace_idx;
+        let Some((ws, geo)) = mon
+            .workspaces_with_render_geo_mut(false)
+            .nth(active_idx)
+        else {
+            return;
+        };
+        let xray_pos = XrayPos::new(geo.loc, zoom);
+        ws.move_up_animated(renderer, xray, xray_has_blocked_out_layers, xray_pos);
     }
 
     pub fn move_down_or_to_workspace_down(&mut self) {

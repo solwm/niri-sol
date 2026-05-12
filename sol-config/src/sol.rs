@@ -17,6 +17,7 @@ use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::Keysym;
 use tracing::warn;
 
+use crate::animations::Curve;
 use crate::appearance::CornerRadius;
 use crate::binds::{Action, Bind, Key, Modifiers, Trigger, WorkspaceReference};
 use crate::misc::SpawnAtStartup;
@@ -201,18 +202,25 @@ fn apply_setting(config: &mut Config, key: &str, value: &str, lineno: usize) -> 
             config.blur.offset = r;
         }
 
+        "crossfade_duration_ms" => {
+            // Tile-movement crossfade: the duration of the alpha fade-out at the
+            // old slot + fade-in at the new slot when a tile is repositioned by
+            // master↔stack swap, stack vertical reorder, etc. 0 disables the
+            // crossfade (positions snap instantly).
+            let v = value.parse::<u32>().map_err(|e| {
+                miette!("line {lineno}: crossfade_duration_ms {value:?}: {e}")
+            })?;
+            config.crossfade.duration_ms = v;
+        }
+
+        "crossfade_curve" => {
+            // Easing curve for the move crossfade. See `Curve` in
+            // `sol-config/src/animations.rs` for valid names.
+            config.crossfade.curve = parse_curve(value, lineno)?;
+        }
+
         // ──── Parse-and-ignore (not yet implemented in niri's master-stack rework) ────
-        "idle_timeout"
-        | "spring_stiffness"
-        | "spring_damping"
-        | "spring_stiffness_vertical"
-        | "spring_damping_vertical"
-        | "spring_stiffness_swap"
-        | "spring_damping_swap"
-        | "spring_stiffness_fade"
-        | "spring_damping_fade"
-        | "workspace_animation"
-        | "workspace_animation_duration_ms" => {}
+        "idle_timeout" => {}
 
         other => {
             warn!("sol config line {lineno}: unknown key `{other}` (ignored)");
@@ -234,6 +242,39 @@ fn parse_on_off(s: &str, lineno: usize, name: &str) -> miette::Result<bool> {
         "off" | "false" | "no" | "0" => Ok(false),
         _ => Err(miette!(
             "line {lineno}: {name} {s:?}: expected on/off (true/false, yes/no, 1/0)"
+        )),
+    }
+}
+
+/// Parse an easing curve name into [`Curve`]. Names match niri's KDL config
+/// (kebab-case), case-insensitive: `linear`, `ease-out-quad`, `ease-out-cubic`,
+/// `ease-out-expo`. `cubic-bezier(x1,y1,x2,y2)` is supported as an inline form.
+fn parse_curve(s: &str, lineno: usize) -> miette::Result<Curve> {
+    let lower = s.to_ascii_lowercase();
+    let trimmed = lower.trim();
+    match trimmed {
+        "linear" => Ok(Curve::Linear),
+        "ease-out-quad" | "ease_out_quad" => Ok(Curve::EaseOutQuad),
+        "ease-out-cubic" | "ease_out_cubic" => Ok(Curve::EaseOutCubic),
+        "ease-out-expo" | "ease_out_expo" => Ok(Curve::EaseOutExpo),
+        s if s.starts_with("cubic-bezier(") && s.ends_with(')') => {
+            let inner = &s["cubic-bezier(".len()..s.len() - 1];
+            let mut nums = inner.split(',').map(|p| p.trim().parse::<f64>());
+            let x1 = nums.next().and_then(|r| r.ok());
+            let y1 = nums.next().and_then(|r| r.ok());
+            let x2 = nums.next().and_then(|r| r.ok());
+            let y2 = nums.next().and_then(|r| r.ok());
+            match (x1, y1, x2, y2) {
+                (Some(x1), Some(y1), Some(x2), Some(y2)) => Ok(Curve::CubicBezier(x1, y1, x2, y2)),
+                _ => Err(miette!(
+                    "line {lineno}: cubic-bezier expects four comma-separated numbers"
+                )),
+            }
+        }
+        _ => Err(miette!(
+            "line {lineno}: unknown curve {s:?}: expected one of \
+             linear, ease-out-quad, ease-out-cubic, ease-out-expo, \
+             cubic-bezier(x1,y1,x2,y2)"
         )),
     }
 }
