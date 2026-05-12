@@ -10,7 +10,7 @@ use calloop::timer::{TimeoutAction, Timer};
 use calloop::EventLoop;
 use calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::{
-    compositor::{CompositorHandler, CompositorState},
+    compositor::{CompositorHandler, CompositorState, Region},
     delegate_compositor, delegate_layer, delegate_output, delegate_registry,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
@@ -391,6 +391,20 @@ impl OutputHandler for AppState {
         let scale = info.as_ref().map(|i| i.scale_factor).unwrap_or(1).max(1);
 
         let surface = self.compositor.create_surface(qh);
+
+        // Mark the surface as fully opaque so the compositor can skip
+        // drawing whatever is behind us. We don't know the configured
+        // surface size yet at this point, so use a region larger than any
+        // realistic output; the compositor intersects with the surface
+        // bounds.
+        if let Ok(region) = Region::new(&self.compositor) {
+            region.add(0, 0, i32::MAX, i32::MAX);
+            surface.set_opaque_region(Some(region.wl_region()));
+            // `region` drops here, destroying the wl_region (the surface
+            // copies the region snapshot at the next commit, so destroying
+            // it now is safe).
+        }
+
         let layer = self.layer_shell.create_layer_surface(
             qh,
             surface,
