@@ -1,12 +1,9 @@
-//! `AppState` ties together: sctk handlers, the EGL/GL renderer, the per-output
-//! map, and the cycling timer.
+//! `AppState` ties together: sctk handlers, the shared wgpu device,
+//! per-output wgpu surfaces, and the frame-callback driven render loop.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::time::Duration;
 
 use anyhow::{Context, Result};
-use calloop::timer::{TimeoutAction, Timer};
 use calloop::EventLoop;
 use calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::{
@@ -29,12 +26,13 @@ use wayland_client::{
     Connection, Proxy, QueueHandle,
 };
 
-use crate::config::Source;
-use crate::egl::Egl;
-use crate::img::DecodedImage;
+use crate::gpu::Gpu;
 use crate::output::PerOutput;
-use crate::render::Renderer;
 use crate::Runtime;
+
+/// Baked-in default shader. Used when the user hasn't supplied a path
+/// in `wallpaper.conf` (or that path fails to read).
+const DEFAULT_SHADER: &str = include_str!("../shaders/default.wgsl");
 
 pub struct AppState {
     pub registry: RegistryState,
@@ -42,18 +40,17 @@ pub struct AppState {
     pub output_state: OutputState,
     pub layer_shell: LayerShell,
 
-    pub runtime: Runtime,
-    /// All eligible images discovered under `runtime.source` if it's a Dir,
-    /// or the single static path wrapped in a Vec if it's an Image.
-    pub pool: Vec<PathBuf>,
-    /// Index into `pool` for the currently-shown cycled wallpaper. None if
-    /// pool is empty.
-    pub current: Option<usize>,
-    /// Image cache keyed on the file path.
-    pub images: HashMap<PathBuf, DecodedImage>,
+    /// Held for raw wl_display pointer extraction (wgpu surface
+    /// creation needs it for every output).
+    pub conn: Connection,
 
-    pub egl: Egl,
-    pub renderer: Renderer,
+    /// Shared wgpu state. Initialized lazily on the first output's
+    /// configure event: we need a Wayland surface to probe an adapter.
+    pub gpu: Option<Gpu>,
+    /// Shader source actually in use. Either the user-supplied file or
+    /// `DEFAULT_SHADER`. Stored so we can rebuild the pipeline on hot
+    /// reload (not implemented yet).
+    pub shader_source: String,
 
     /// Keyed on the `wl_output`'s ObjectId protocol id (u32).
     pub outputs: HashMap<u32, PerOutput>,
@@ -71,27 +68,17 @@ pub fn run(runtime: Runtime) -> Result<()> {
     let layer_shell = LayerShell::bind(&globals, &qh).context("bind zwlr_layer_shell_v1")?;
     let registry = RegistryState::new(&globals);
 
-    let egl = Egl::new(&conn).context("init EGL")?;
-    let renderer = Renderer::new(&egl).context("init renderer")?;
-
-    let pool = build_pool(&runtime)?;
-    let current = if pool.is_empty() {
-        None
-    } else {
-        Some(pick_random(pool.len(), None))
-    };
+    let shader_source = crate::gpu::Gpu::load_shader_source(runtime.shader_path.as_deref())
+        .unwrap_or_else(|| DEFAULT_SHADER.to_string());
 
     let mut state = AppState {
         registry,
         compositor,
         output_state,
         layer_shell,
-        runtime,
-        pool,
-        current,
-        images: HashMap::new(),
-        egl,
-        renderer,
+        conn: conn.clone(),
+        gpu: None,
+        shader_source,
         outputs: HashMap::new(),
         running: true,
     };
@@ -103,18 +90,6 @@ pub fn run(runtime: Runtime) -> Result<()> {
         .insert(handle.clone())
         .map_err(|e| anyhow::anyhow!("insert wayland source: {e}"))?;
 
-    // Cycling timer. Only meaningful when we have >1 image in the pool.
-    if state.runtime.interval_secs > 0 && state.pool.len() > 1 {
-        let interval = Duration::from_secs(state.runtime.interval_secs);
-        let timer = Timer::from_duration(interval);
-        handle
-            .insert_source(timer, move |_deadline, _, app: &mut AppState| {
-                app.cycle();
-                TimeoutAction::ToDuration(interval)
-            })
-            .map_err(|e| anyhow::anyhow!("insert cycle timer: {e}"))?;
-    }
-
     while state.running {
         event_loop
             .dispatch(None, &mut state)
@@ -123,182 +98,48 @@ pub fn run(runtime: Runtime) -> Result<()> {
     Ok(())
 }
 
-/// Scan `runtime.source` (and per-output overrides) into a single pool.
-/// For Image source: one entry. For Dir source: every recognized image
-/// inside the dir (non-recursive). Per-output overrides are NOT included
-/// in the pool — they are static and handled separately.
-fn build_pool(runtime: &Runtime) -> Result<Vec<PathBuf>> {
-    let Some(src) = &runtime.source else {
-        return Ok(Vec::new());
-    };
-    match src {
-        Source::Image(p) => Ok(vec![p.clone()]),
-        Source::Dir(d) => {
-            let mut out = Vec::new();
-            let read = std::fs::read_dir(d)
-                .with_context(|| format!("read_dir {}", d.display()))?;
-            for entry in read {
-                let entry = match entry {
-                    Ok(e) => e,
-                    Err(err) => {
-                        tracing::warn!("readdir error: {err}");
-                        continue;
-                    }
-                };
-                let path = entry.path();
-                if !path.is_file() {
-                    continue;
-                }
-                let ok = path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .map(|e| {
-                        matches!(
-                            e.to_ascii_lowercase().as_str(),
-                            "png" | "jpg" | "jpeg"
-                        )
-                    })
-                    .unwrap_or(false);
-                if ok {
-                    out.push(path);
-                }
-            }
-            if out.is_empty() {
-                tracing::warn!("no PNG/JPG/JPEG images found in {}", d.display());
-            }
-            out.sort();
-            Ok(out)
-        }
-    }
-}
-
-/// Pick a random index in `[0, len)`, biased to avoid re-picking `avoid` if
-/// possible. Trivial Lehmer-style RNG seeded from the system clock — we
-/// don't pull `fastrand` to keep the crate dep-light.
-fn pick_random(len: usize, avoid: Option<usize>) -> usize {
-    if len == 0 {
-        return 0;
-    }
-    if len == 1 {
-        return 0;
-    }
-    let seed = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(1);
-    // xorshift64
-    let mut x = seed.wrapping_mul(2685821657736338717);
-    x ^= x << 13;
-    x ^= x >> 7;
-    x ^= x << 17;
-    let mut idx = (x as usize) % len;
-    if let Some(a) = avoid {
-        if idx == a {
-            idx = (idx + 1) % len;
-        }
-    }
-    idx
-}
-
 impl AppState {
-    /// Lazy-decode + cache.
-    fn ensure_image(&mut self, path: &PathBuf) -> bool {
-        if self.images.contains_key(path) {
-            return true;
-        }
-        match DecodedImage::load(path) {
-            Ok(img) => {
-                tracing::info!(
-                    "loaded {} ({}×{})",
-                    path.display(),
-                    img.width,
-                    img.height
-                );
-                self.images.insert(path.clone(), img);
-                true
-            }
-            Err(err) => {
-                tracing::error!("failed to load {}: {err:?}", path.display());
-                false
-            }
-        }
-    }
-
-    /// Image path for an output: per-output override wins, else the current
-    /// cycled image.
-    fn path_for(&self, name: &str) -> Option<PathBuf> {
-        if let Some(p) = self.runtime.per_output.get(name) {
-            return Some(p.clone());
-        }
-        let idx = self.current?;
-        self.pool.get(idx).cloned()
-    }
-
-    /// Apply the image-for-output rule to `outputs[oid]` (decoding lazily),
-    /// then redraw it if it's already configured.
-    fn assign_image(&mut self, oid: u32) {
-        let name = self
-            .outputs
-            .get(&oid)
-            .and_then(|p| p.name.clone());
-        let Some(name) = name else { return };
-        let Some(path) = self.path_for(&name) else {
-            tracing::info!("no wallpaper for output `{name}` — leaving transparent");
-            return;
-        };
-        if !self.ensure_image(&path) {
+    /// Initialize the shared GPU using `surface_id` as the probe
+    /// surface for adapter selection. Becomes a no-op once gpu is set.
+    /// On success, the probe surface is bound to the corresponding
+    /// PerOutput so we don't waste it.
+    fn ensure_gpu(&mut self, oid: u32) {
+        if self.gpu.is_some() {
             return;
         }
-        if let Some(p) = self.outputs.get_mut(&oid) {
-            p.image_path = Some(path);
-        }
-    }
-
-    fn draw_output(&mut self, oid: u32) {
         let Some(per_output) = self.outputs.get(&oid) else {
             return;
         };
-        let Some(path) = per_output.image_path.clone() else {
-            return;
-        };
-        let Some(decoded) = self.images.get(&path) else {
-            return;
-        };
-        if let Err(err) =
-            per_output.draw(&self.egl, &mut self.renderer, decoded, self.runtime.fit)
-        {
-            tracing::error!("draw failed: {err:?}");
+        let surface_id = per_output.layer.wl_surface().id();
+        match Gpu::new(&self.conn, &surface_id, &self.shader_source) {
+            Ok((gpu, probe_surface)) => {
+                self.gpu = Some(gpu);
+                // The probe surface is for this output; keep it.
+                if let Some(p) = self.outputs.get_mut(&oid) {
+                    p.surface = Some(probe_surface);
+                }
+            }
+            Err(err) => {
+                tracing::error!("wgpu init failed: {err:?}");
+            }
         }
     }
 
-    /// Pick the next cycled image, reassign + redraw every output that
-    /// doesn't have a per-output override.
-    fn cycle(&mut self) {
-        if self.pool.len() <= 1 {
+    fn configure_and_draw(&mut self, oid: u32, logical_w: i32, logical_h: i32, qh: &QueueHandle<Self>) {
+        self.ensure_gpu(oid);
+        let Some(gpu) = self.gpu.as_ref() else {
             return;
-        }
-        let next = pick_random(self.pool.len(), self.current);
-        self.current = Some(next);
-        let new_path = self.pool[next].clone();
-        tracing::info!("cycle → {}", new_path.display());
-        if !self.ensure_image(&new_path) {
-            return;
-        }
-        let oids: Vec<u32> = self.outputs.keys().copied().collect();
-        for oid in oids {
-            let has_override = self
-                .outputs
-                .get(&oid)
-                .and_then(|p| p.name.as_deref())
-                .map(|n| self.runtime.per_output.contains_key(n))
-                .unwrap_or(false);
-            if has_override {
-                continue;
+        };
+        if let Some(p) = self.outputs.get_mut(&oid) {
+            if let Err(err) = p.configure_size(&self.conn, gpu, logical_w, logical_h) {
+                tracing::error!("configure_size: {err:?}");
+                return;
             }
-            if let Some(p) = self.outputs.get_mut(&oid) {
-                p.image_path = Some(new_path.clone());
+            if let Err(err) = p.draw(gpu) {
+                tracing::error!("draw: {err:?}");
+                return;
             }
-            self.draw_output(oid);
+            p.request_frame(qh);
         }
     }
 }
@@ -309,7 +150,7 @@ impl CompositorHandler for AppState {
     fn scale_factor_changed(
         &mut self,
         _conn: &Connection,
-        _qh: &QueueHandle<Self>,
+        qh: &QueueHandle<Self>,
         surface: &wl_surface::WlSurface,
         new_factor: i32,
     ) {
@@ -320,21 +161,21 @@ impl CompositorHandler for AppState {
         let Some(oid) = oid_opt else { return };
 
         let scale = new_factor.max(1);
-        let Some(p) = self.outputs.get_mut(&oid) else {
-            return;
+        let (lw, lh) = {
+            let Some(p) = self.outputs.get_mut(&oid) else {
+                return;
+            };
+            if p.scale == scale {
+                return;
+            }
+            p.scale = scale;
+            let (w, h) = p.size_px;
+            (
+                (w / p.scale.max(1)).max(1),
+                (h / p.scale.max(1)).max(1),
+            )
         };
-        if p.scale == scale {
-            return;
-        }
-        p.scale = scale;
-        let (w, h) = p.size_px;
-        let lw = (w / p.scale.max(1)).max(1);
-        let lh = (h / p.scale.max(1)).max(1);
-        if let Err(err) = p.configure_size(&self.egl, lw, lh) {
-            tracing::error!("configure_size after scale change: {err:?}");
-            return;
-        }
-        self.draw_output(oid);
+        self.configure_and_draw(oid, lw, lh, qh);
     }
 
     fn transform_changed(
@@ -349,11 +190,27 @@ impl CompositorHandler for AppState {
     fn frame(
         &mut self,
         _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _surface: &wl_surface::WlSurface,
+        qh: &QueueHandle<Self>,
+        surface: &wl_surface::WlSurface,
         _time: u32,
     ) {
-        // Static wallpaper between cycles — no per-frame work.
+        // Find which output's surface this callback was for, draw the
+        // next frame, and immediately request another callback.
+        let id = surface.id().protocol_id();
+        let oid_opt = self.outputs.iter().find_map(|(oid, p)| {
+            (p.layer.wl_surface().id().protocol_id() == id).then_some(*oid)
+        });
+        let Some(oid) = oid_opt else { return };
+
+        let Some(gpu) = self.gpu.as_ref() else { return };
+        if let Some(p) = self.outputs.get_mut(&oid) {
+            p.frame_requested = false;
+            if let Err(err) = p.draw(gpu) {
+                tracing::error!("frame draw: {err:?}");
+                return;
+            }
+            p.request_frame(qh);
+        }
     }
 
     fn surface_enter(
@@ -392,17 +249,11 @@ impl OutputHandler for AppState {
 
         let surface = self.compositor.create_surface(qh);
 
-        // Mark the surface as fully opaque so the compositor can skip
-        // drawing whatever is behind us. We don't know the configured
-        // surface size yet at this point, so use a region larger than any
-        // realistic output; the compositor intersects with the surface
-        // bounds.
+        // Mark the surface as fully opaque — sol's compositor uses this
+        // to skip drawing whatever is "behind" the wallpaper layer.
         if let Ok(region) = Region::new(&self.compositor) {
             region.add(0, 0, i32::MAX, i32::MAX);
             surface.set_opaque_region(Some(region.wl_region()));
-            // `region` drops here, destroying the wl_region (the surface
-            // copies the region snapshot at the next commit, so destroying
-            // it now is safe).
         }
 
         let layer = self.layer_shell.create_layer_surface(
@@ -424,10 +275,6 @@ impl OutputHandler for AppState {
         per_output.name = name.clone();
         self.outputs.insert(oid, per_output);
 
-        if name.is_some() {
-            self.assign_image(oid);
-        }
-
         tracing::info!(
             "new output: id={oid} name={:?} scale={scale}",
             name.unwrap_or_default()
@@ -445,19 +292,13 @@ impl OutputHandler for AppState {
         let name = info.as_ref().and_then(|i| i.name.clone());
         let scale = info.as_ref().map(|i| i.scale_factor).unwrap_or(1).max(1);
 
-        let mut name_just_set = false;
         if let Some(p) = self.outputs.get_mut(&oid) {
             if p.name.is_none() && name.is_some() {
-                p.name = name.clone();
-                name_just_set = true;
+                p.name = name;
             }
             if p.scale != scale {
                 p.scale = scale;
             }
-        }
-        if name_just_set {
-            self.assign_image(oid);
-            self.draw_output(oid);
         }
     }
 
@@ -469,13 +310,11 @@ impl OutputHandler for AppState {
     ) {
         let oid = output.id().protocol_id();
         if let Some(p) = self.outputs.remove(&oid) {
-            if let Some(s) = p.egl_surface {
-                self.egl.destroy_surface(s);
-            }
             tracing::info!(
                 "output destroyed: id={oid} name={:?}",
                 p.name.as_deref().unwrap_or("")
             );
+            // Surface, uniforms, bind group drop here.
         }
     }
 }
@@ -492,18 +331,14 @@ impl LayerShellHandler for AppState {
             (p.layer.wl_surface().id().protocol_id() == surface_id).then_some(*id)
         });
         if let Some(oid) = oid {
-            if let Some(p) = self.outputs.remove(&oid) {
-                if let Some(s) = p.egl_surface {
-                    self.egl.destroy_surface(s);
-                }
-            }
+            self.outputs.remove(&oid);
         }
     }
 
     fn configure(
         &mut self,
         _conn: &Connection,
-        _qh: &QueueHandle<Self>,
+        qh: &QueueHandle<Self>,
         layer: &LayerSurface,
         configure: LayerSurfaceConfigure,
         _serial: u32,
@@ -515,16 +350,7 @@ impl LayerShellHandler for AppState {
         let Some(oid) = oid_opt else { return };
 
         let (w, h) = configure.new_size;
-        let w = w as i32;
-        let h = h as i32;
-
-        if let Some(p) = self.outputs.get_mut(&oid) {
-            if let Err(err) = p.configure_size(&self.egl, w, h) {
-                tracing::error!("configure_size: {err:?}");
-                return;
-            }
-        }
-        self.draw_output(oid);
+        self.configure_and_draw(oid, w as i32, h as i32, qh);
     }
 }
 

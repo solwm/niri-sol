@@ -1,36 +1,21 @@
 //! Parse `~/.config/sol/wallpaper.conf`.
 //!
-//! Format mirrors sol.conf (Hyprland-ish `key = value`, `#` comments). Keys:
+//! Format mirrors sol.conf (Hyprland-ish `key = value`, `#` comments).
+//! Single key currently supported:
 //!
 //! ```text
-//! dir      = /path/to/directory      # cycle random images from here
-//! image    = /path/to/static.png     # OR a single static image
-//! interval = 30                      # seconds between cycles; 0 = no cycling
-//! fit      = fill                    # fill | fit | stretch | center
-//! output   = eDP-1, /path/to/img.png # per-output override (repeatable)
+//! shader = /path/to/wallpaper.wgsl   # WGSL fragment shader; default is built-in
 //! ```
 //!
-//! `dir` and `image` are mutually exclusive; if both are set, `dir` wins.
+//! Missing or unset → daemon uses the baked-in color-blob shader.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 
-use crate::Fit;
-
 #[derive(Debug, Default, Clone)]
 pub struct WallpaperConfig {
-    pub source: Option<Source>,
-    pub interval_secs: u64,
-    pub fit: Option<Fit>,
-    pub per_output: HashMap<String, PathBuf>,
-}
-
-#[derive(Debug, Clone)]
-pub enum Source {
-    Image(PathBuf),
-    Dir(PathBuf),
+    pub shader_path: Option<PathBuf>,
 }
 
 impl WallpaperConfig {
@@ -62,59 +47,19 @@ impl WallpaperConfig {
             let key = key.trim();
             let value = value.trim();
             match key {
-                "dir" => {
+                "shader" => {
                     if value.is_empty() {
-                        bail!("line {lineno}: dir: empty value");
+                        bail!("line {lineno}: shader: empty value");
                     }
-                    cfg.source = Some(Source::Dir(expand_path(value)));
-                }
-                "image" => {
-                    if value.is_empty() {
-                        bail!("line {lineno}: image: empty value");
-                    }
-                    // Only set if `dir` hasn't already won.
-                    if !matches!(cfg.source, Some(Source::Dir(_))) {
-                        cfg.source = Some(Source::Image(expand_path(value)));
-                    }
-                }
-                "interval" => {
-                    cfg.interval_secs = value
-                        .parse::<u64>()
-                        .with_context(|| format!("line {lineno}: interval: not a u64"))?;
-                }
-                "fit" => {
-                    cfg.fit = Some(parse_fit(value).with_context(|| {
-                        format!("line {lineno}: fit: unknown mode `{value}`")
-                    })?);
-                }
-                "output" => {
-                    let (name, path) = value.split_once(',').with_context(|| {
-                        format!("line {lineno}: output: expected `NAME, PATH`")
-                    })?;
-                    let name = name.trim();
-                    let path = path.trim();
-                    if name.is_empty() || path.is_empty() {
-                        bail!("line {lineno}: output: empty name or path");
-                    }
-                    cfg.per_output.insert(name.to_string(), expand_path(path));
+                    cfg.shader_path = Some(expand_path(value));
                 }
                 other => {
-                    bail!("line {lineno}: unknown key `{other}`");
+                    tracing::warn!("line {lineno}: unknown key `{other}` (ignored)");
                 }
             }
         }
         Ok(cfg)
     }
-}
-
-fn parse_fit(s: &str) -> Result<Fit> {
-    Ok(match s {
-        "fill" => Fit::Fill,
-        "fit" => Fit::Fit,
-        "stretch" => Fit::Stretch,
-        "center" => Fit::Center,
-        _ => bail!("expected one of: fill, fit, stretch, center"),
-    })
 }
 
 /// Expand a leading `~/` to `$HOME/`. (Bare `~` also works.)
