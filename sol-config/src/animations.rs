@@ -13,6 +13,7 @@ pub struct Animations {
     pub window_close: WindowCloseAnim,
     pub horizontal_view_movement: HorizontalViewMovementAnim,
     pub window_movement: WindowMovementAnim,
+    pub tile_movement: TileMovementAnim,
     pub window_resize: WindowResizeAnim,
     pub config_notification_open_close: ConfigNotificationOpenCloseAnim,
     pub exit_confirmation_open_close: ExitConfirmationOpenCloseAnim,
@@ -29,6 +30,7 @@ impl Default for Animations {
             workspace_switch: Default::default(),
             horizontal_view_movement: Default::default(),
             window_movement: Default::default(),
+            tile_movement: Default::default(),
             window_open: Default::default(),
             window_close: Default::default(),
             window_resize: Default::default(),
@@ -59,6 +61,8 @@ pub struct AnimationsPart {
     pub horizontal_view_movement: Option<HorizontalViewMovementAnim>,
     #[knuffel(child)]
     pub window_movement: Option<WindowMovementAnim>,
+    #[knuffel(child)]
+    pub tile_movement: Option<TileMovementAnim>,
     #[knuffel(child)]
     pub window_resize: Option<WindowResizeAnim>,
     #[knuffel(child)]
@@ -91,6 +95,7 @@ impl MergeWith<AnimationsPart> for Animations {
             window_close,
             horizontal_view_movement,
             window_movement,
+            tile_movement,
             window_resize,
             config_notification_open_close,
             exit_confirmation_open_close,
@@ -219,6 +224,27 @@ impl Default for WindowMovementAnim {
             kind: Kind::Spring(SpringParams {
                 damping_ratio: 1.,
                 stiffness: 800,
+                epsilon: 0.0001,
+            }),
+        })
+    }
+}
+
+/// Spring animation driving the *tile slot* shift when columns swap places
+/// in the master-stack layout (`move-left`, `move-right`, `move-up`,
+/// `move-down`). Distinct from `window_movement`, which animates a window
+/// repositioning within a column; tile-motion springs tend to want a
+/// slightly looser feel since the visible displacement is larger.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TileMovementAnim(pub Animation);
+
+impl Default for TileMovementAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: Kind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 600,
                 epsilon: 0.0001,
             }),
         })
@@ -357,6 +383,21 @@ where
 }
 
 impl<S> knuffel::Decode<S> for WindowMovementAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for TileMovementAnim
 where
     S: knuffel::traits::ErrorSpan,
 {

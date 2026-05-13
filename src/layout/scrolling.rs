@@ -16,7 +16,6 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::monitor::InsertPosition;
-use super::moving_snapshot::{MovingSnapshot, MovingSnapshotRenderElement};
 use super::tile::{Tile, TileRenderElement};
 use super::workspace::InteractiveResize;
 use super::{HitType, LayoutElement, Options, RemovedTile};
@@ -30,17 +29,6 @@ use crate::utils::transaction::{Transaction, TransactionBlocker};
 use crate::utils::ResizeEdge;
 use crate::window::ResolvedWindowRules;
 
-/// Build an easing `Animation` config from sol.conf's crossfade values.
-fn crossfade_anim_kind(cfg: sol_config::Crossfade) -> sol_config::Animation {
-    sol_config::Animation {
-        off: cfg.duration_ms == 0,
-        kind: sol_config::animations::Kind::Easing(sol_config::animations::EasingParams {
-            duration_ms: cfg.duration_ms,
-            curve: cfg.curve,
-        }),
-    }
-}
-
 /// Master-stack space for windows.
 #[derive(Debug)]
 pub struct ScrollingSpace<W: LayoutElement> {
@@ -52,6 +40,12 @@ pub struct ScrollingSpace<W: LayoutElement> {
 
     /// What is currently focused.
     focus: Focus,
+
+    /// Stack index that had focus before we last moved left to master.
+    /// Restored when the user moves right again from master, so the cursor
+    /// returns to the same row in the stack instead of always landing on
+    /// the top one. Cleared / clamped when the stack changes shape.
+    last_stack_idx: Option<usize>,
 
     /// Master width as a proportion of the working area (0.0..=1.0).
     master_ratio: f64,
@@ -82,18 +76,12 @@ pub struct ScrollingSpace<W: LayoutElement> {
 
     /// Always Static(0.0) for the master-stack engine; kept for API compatibility.
     view_offset: ViewOffset,
-
-    /// Per-tile snapshots held at their pre-move slot, fading out while the
-    /// live tile fades in at its new slot. Populated by `move_left_animated`
-    /// and friends; drained as the fade-out animation completes.
-    moving_snapshots: Vec<MovingSnapshot>,
 }
 
 niri_render_elements! {
     ScrollingSpaceRenderElement<R> => {
         Tile = TileRenderElement<R>,
         ClosingWindow = ClosingWindowRenderElement,
-        MovingSnapshot = MovingSnapshotRenderElement,
     }
 }
 
@@ -175,6 +163,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             master: None,
             stack: Vec::new(),
             focus: Focus::Empty,
+            last_stack_idx: None,
             master_ratio: 0.5,
             interactive_resize: None,
             closing_windows: Vec::new(),
@@ -185,7 +174,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             clock,
             options,
             view_offset: ViewOffset::Static(0.0),
-            moving_snapshots: Vec::new(),
         }
     }
 
@@ -234,10 +222,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             closing.advance_animations();
             closing.are_animations_ongoing()
         });
-        self.moving_snapshots.retain_mut(|snap| {
-            snap.advance_animations();
-            !snap.is_done()
-        });
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
@@ -246,7 +230,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .map_or(false, Column::are_animations_ongoing)
             || self.stack.iter().any(Column::are_animations_ongoing)
             || !self.closing_windows.is_empty()
-            || !self.moving_snapshots.is_empty()
     }
 
     pub fn are_transitions_ongoing(&self) -> bool {
@@ -255,7 +238,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .map_or(false, Column::are_transitions_ongoing)
             || self.stack.iter().any(Column::are_transitions_ongoing)
             || !self.closing_windows.is_empty()
-            || !self.moving_snapshots.is_empty()
     }
 
     pub fn update_render_elements(&mut self, is_active: bool) {
@@ -660,12 +642,45 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     pub fn start_close_animation_for_window(
         &mut self,
-        _renderer: &mut GlesRenderer,
-        _window: &W::Id,
-        _blocker: TransactionBlocker,
+        renderer: &mut GlesRenderer,
+        window: &W::Id,
+        blocker: TransactionBlocker,
     ) {
-        // Master-stack v1: no close animation. The window simply disappears when the toplevel is
-        // destroyed. The transaction blocker is dropped here, releasing any waiting transactions.
+        // Find the closing tile's slot + size, take its unmap snapshot, and
+        // spawn a `ClosingWindow` (fade-out + zoom-out) at that slot. The
+        // tile itself will be removed from the layout separately; the
+        // closing-window element keeps drawing the snapshot in place while
+        // the rest of the layout reflows around the vacated slot.
+        let Some((tile, tile_pos)) = self
+            .tiles_with_render_positions_mut(false)
+            .find(|(t, _)| t.window().id() == window)
+        else {
+            return;
+        };
+        let Some(snapshot) = tile.take_unmap_snapshot() else {
+            return;
+        };
+        let tile_size = tile.tile_size();
+
+        let anim = Animation::new(
+            self.clock.clone(),
+            0.,
+            1.,
+            0.,
+            self.options.animations.window_close.anim,
+        );
+
+        let blocker = if self.options.disable_transactions {
+            TransactionBlocker::completed()
+        } else {
+            blocker
+        };
+
+        let scale = Scale::from(self.scale);
+        match ClosingWindow::new(renderer, snapshot, scale, tile_size, tile_pos, blocker, anim) {
+            Ok(closing) => self.closing_windows.push(closing),
+            Err(err) => warn!("error creating a closing window animation: {err:?}"),
+        }
     }
 
     pub fn start_open_animation(&mut self, id: &W::Id) -> bool {
@@ -684,7 +699,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     pub fn focus_left(&mut self) -> bool {
         match self.focus {
-            Focus::Stack(_) if self.master.is_some() => {
+            Focus::Stack(idx) if self.master.is_some() => {
+                // Remember where we were in the stack so a later
+                // `focus_right` from master returns to the same row.
+                self.last_stack_idx = Some(idx);
                 self.focus = Focus::Master;
                 true
             }
@@ -695,7 +713,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn focus_right(&mut self) -> bool {
         match self.focus {
             Focus::Master if !self.stack.is_empty() => {
-                self.focus = Focus::Stack(0);
+                // Restore the remembered stack index when valid; fall
+                // back to the top row otherwise.
+                let idx = self
+                    .last_stack_idx
+                    .filter(|i| *i < self.stack.len())
+                    .unwrap_or(0);
+                self.focus = Focus::Stack(idx);
                 true
             }
             _ => false,
@@ -812,117 +836,77 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
-    /// Crossfade-animated variant of `move_left` — captures per-tile snapshots
-    /// at the old slots before the swap, performs the swap, then drives a
-    /// fade-out of the snapshots at the old slots while the live tiles fade
-    /// in at their new slots. Falls back to instant swap when the configured
-    /// `crossfade_duration_ms` is 0.
+    /// Spring-animated variant of `move_left`. The swap happens instantly at
+    /// the layout level; each tile whose slot changed gets a `MoveAnimation`
+    /// driving its render offset from the old slot to the new one, tuned by
+    /// `animations.tile_movement`. The renderer/xray params are unused by
+    /// the spring path (no snapshot baking) but the signature is preserved
+    /// so callers up the stack don't need to change.
     pub fn move_left_animated(
         &mut self,
-        renderer: &mut GlesRenderer,
-        xray: Option<&mut Xray>,
-        xray_has_blocked_out_layers: bool,
-        xray_pos: XrayPos,
+        _renderer: &mut GlesRenderer,
+        _xray: Option<&mut Xray>,
+        _xray_has_blocked_out_layers: bool,
+        _xray_pos: XrayPos,
     ) -> bool {
-        self.swap_with_crossfade(renderer, xray, xray_has_blocked_out_layers, xray_pos, |s| {
-            s.move_left()
-        })
+        self.swap_with_spring(|s| s.move_left())
     }
 
-    /// Crossfade-animated variant of `move_right`.
+    /// Spring-animated variant of `move_right`.
     pub fn move_right_animated(
         &mut self,
-        renderer: &mut GlesRenderer,
-        xray: Option<&mut Xray>,
-        xray_has_blocked_out_layers: bool,
-        xray_pos: XrayPos,
+        _renderer: &mut GlesRenderer,
+        _xray: Option<&mut Xray>,
+        _xray_has_blocked_out_layers: bool,
+        _xray_pos: XrayPos,
     ) -> bool {
-        self.swap_with_crossfade(renderer, xray, xray_has_blocked_out_layers, xray_pos, |s| {
-            s.move_right()
-        })
+        self.swap_with_spring(|s| s.move_right())
     }
 
-    /// Crossfade-animated variant of `move_up`.
+    /// Spring-animated variant of `move_up`.
     pub fn move_up_animated(
         &mut self,
-        renderer: &mut GlesRenderer,
-        xray: Option<&mut Xray>,
-        xray_has_blocked_out_layers: bool,
-        xray_pos: XrayPos,
+        _renderer: &mut GlesRenderer,
+        _xray: Option<&mut Xray>,
+        _xray_has_blocked_out_layers: bool,
+        _xray_pos: XrayPos,
     ) -> bool {
-        self.swap_with_crossfade(renderer, xray, xray_has_blocked_out_layers, xray_pos, |s| {
-            s.move_up()
-        })
+        self.swap_with_spring(|s| s.move_up())
     }
 
-    /// Crossfade-animated variant of `move_down`.
+    /// Spring-animated variant of `move_down`.
     pub fn move_down_animated(
         &mut self,
-        renderer: &mut GlesRenderer,
-        xray: Option<&mut Xray>,
-        xray_has_blocked_out_layers: bool,
-        xray_pos: XrayPos,
+        _renderer: &mut GlesRenderer,
+        _xray: Option<&mut Xray>,
+        _xray_has_blocked_out_layers: bool,
+        _xray_pos: XrayPos,
     ) -> bool {
-        self.swap_with_crossfade(renderer, xray, xray_has_blocked_out_layers, xray_pos, |s| {
-            s.move_down()
-        })
+        self.swap_with_spring(|s| s.move_down())
     }
 
-    /// Shared implementation: snapshot tiles → run `mutate` → diff layout →
-    /// spawn fade-out snapshots at old positions + fade-in alpha on tiles
-    /// whose slot changed.
-    fn swap_with_crossfade(
-        &mut self,
-        renderer: &mut GlesRenderer,
-        mut xray: Option<&mut Xray>,
-        xray_has_blocked_out_layers: bool,
-        xray_pos: XrayPos,
-        mutate: impl FnOnce(&mut Self) -> bool,
-    ) -> bool {
-        // Duration 0 ⇒ snap, no animation.
-        if self.options.crossfade.duration_ms == 0 {
-            return mutate(self);
-        }
-
-        // 1. Capture each tile's pre-swap slot position + a frozen render
-        //    snapshot of its current appearance.
+    /// Shared implementation: capture pre-swap positions → run `mutate` →
+    /// diff layout → for each tile whose slot changed, kick off a spring
+    /// animation on its render offset so it visibly slides from the old
+    /// slot to the new one.
+    fn swap_with_spring(&mut self, mutate: impl FnOnce(&mut Self) -> bool) -> bool {
+        // Snapshot positions before the swap.
         let pre_layout = self.column_layout();
-        let mut captured: Vec<(W::Id, Point<f64, Logical>, super::tile::TileRenderSnapshot)> =
-            Vec::with_capacity(pre_layout.len());
+        let mut pre: Vec<(W::Id, Point<f64, Logical>)> = Vec::with_capacity(pre_layout.len());
         for (uidx, pos, _) in &pre_layout {
-            let Some(col) = self.column_by_unified_idx(*uidx) else {
-                continue;
-            };
-            let id = col.tile.window().id().clone();
-            // Offset xray_pos by the tile's slot — same as the live render
-            // path in `render()` — so the snapshot's blur backdrop samples
-            // the wallpaper region behind THIS tile, not the workspace's
-            // top-left.
-            let tile_xray_pos = xray_pos.offset(*pos);
-            let snap = col.tile.render_snapshot(
-                renderer,
-                xray.as_deref_mut(),
-                xray_has_blocked_out_layers,
-                tile_xray_pos,
-            );
-            captured.push((id, *pos, snap));
+            if let Some(col) = self.column_by_unified_idx(*uidx) {
+                pre.push((col.tile.window().id().clone(), *pos));
+            }
         }
 
-        // 2. Run the mutation.
         if !mutate(self) {
             return false;
         }
 
-        // 3. Diff pre / post positions. For each tile whose slot changed,
-        //    bake the captured snapshot into a texture, drop it at the old
-        //    slot with a fade-out, and call `animate_alpha(0, 1)` on the
-        //    live tile to fade it in at the new slot.
+        // Diff against post-swap positions; animate the displacement.
         let post_layout = self.column_layout();
-        let scale = Scale::from(self.scale);
-        let anim_kind = crossfade_anim_kind(self.options.crossfade);
-
-        for (id, old_pos, snapshot) in captured {
-            // Find this id's post-swap slot.
+        let anim_cfg = self.options.animations.tile_movement.0;
+        for (id, old_pos) in pre {
             let new_pos = post_layout.iter().find_map(|(uidx, pos, _)| {
                 self.column_by_unified_idx(*uidx)
                     .and_then(|c| (c.tile.window().id() == &id).then_some(*pos))
@@ -934,17 +918,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             if delta.x.abs() < 0.5 && delta.y.abs() < 0.5 {
                 continue;
             }
-
-            // Fade-out snapshot at the old slot.
-            let fade_out = Animation::new(self.clock.clone(), 0., 1., 0., anim_kind);
-            match MovingSnapshot::new(renderer, snapshot, scale, old_pos, fade_out) {
-                Ok(snap) => self.moving_snapshots.push(snap),
-                Err(err) => warn!("crossfade: error baking moving snapshot: {err:?}"),
-            }
-
-            // Fade-in the live tile at its new slot.
             if let Some(col) = self.find_column_by_id_mut(&id) {
-                col.tile.animate_alpha(0., 1., anim_kind);
+                if delta.x.abs() >= 0.5 {
+                    col.tile.animate_move_x_from_with_config(delta.x, anim_cfg);
+                }
+                if delta.y.abs() >= 0.5 {
+                    col.tile.animate_move_y_from_with_config(delta.y, anim_cfg);
+                }
             }
         }
 
@@ -1317,22 +1297,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        // Crossfade: render fading-out snapshots from the most recent layout
-        // mutation (master↔stack swap, stack reorder) FIRST so they sit on top
-        // of the live tiles. Each snapshot is anchored at a tile's *old* slot
-        // and fades out as the matching live tile fades in at its new slot.
-        let scale = Scale::from(self.scale);
-        for snap in &self.moving_snapshots {
-            if let Some(elem) = snap.render(scale) {
-                push(ScrollingSpaceRenderElement::MovingSnapshot(elem));
-            }
-        }
-
         let layout = self.column_layout();
         for (unified_idx, pos, _size) in layout {
             let Some(col) = self.column_by_unified_idx(unified_idx) else {
                 continue;
             };
+            // Layout position plus any in-flight move-animation offset — this
+            // is what drives the spring-based slide when columns swap slots.
+            let pos = pos + col.tile.render_offset();
             let is_active = Some(unified_idx) == focused_idx;
             let draw_focus_ring = focus_ring && is_active;
             // Offset xray_pos by the tile's position within the workspace.

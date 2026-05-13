@@ -17,7 +17,7 @@ use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::Keysym;
 use tracing::warn;
 
-use crate::animations::Curve;
+use crate::animations::{Curve, EasingParams, Kind};
 use crate::appearance::CornerRadius;
 use crate::binds::{Action, Bind, Key, Modifiers, Trigger, WorkspaceReference};
 use crate::misc::SpawnAtStartup;
@@ -202,21 +202,76 @@ fn apply_setting(config: &mut Config, key: &str, value: &str, lineno: usize) -> 
             config.blur.offset = r;
         }
 
-        "crossfade_duration_ms" => {
-            // Tile-movement crossfade: the duration of the alpha fade-out at the
-            // old slot + fade-in at the new slot when a tile is repositioned by
-            // master↔stack swap, stack vertical reorder, etc. 0 disables the
-            // crossfade (positions snap instantly).
+        // Tile-movement spring (master↔stack swap, stack vertical reorder).
+        // Tile slides from its old slot to the new one with spring physics.
+        // `on` enables the animation, `off` makes slots snap instantly.
+        "tile_movement" => {
+            let enabled = parse_on_off(value, lineno, "tile_movement")?;
+            config.animations.tile_movement.0.off = !enabled;
+        }
+        "tile_movement_damping_ratio" => {
+            let v = parse_f64(value, lineno, "tile_movement_damping_ratio")?;
+            if !(0.1..=10.).contains(&v) {
+                return Err(miette!(
+                    "line {lineno}: tile_movement_damping_ratio {value:?}: must be between 0.1 and 10"
+                ));
+            }
+            set_tile_movement_spring(&mut config.animations.tile_movement.0, |p| {
+                p.damping_ratio = v
+            });
+        }
+        "tile_movement_stiffness" => {
             let v = value.parse::<u32>().map_err(|e| {
-                miette!("line {lineno}: crossfade_duration_ms {value:?}: {e}")
+                miette!("line {lineno}: tile_movement_stiffness {value:?}: {e}")
             })?;
-            config.crossfade.duration_ms = v;
+            if v == 0 {
+                return Err(miette!(
+                    "line {lineno}: tile_movement_stiffness {value:?}: must be >= 1"
+                ));
+            }
+            set_tile_movement_spring(&mut config.animations.tile_movement.0, |p| p.stiffness = v);
+        }
+        "tile_movement_epsilon" => {
+            let v = parse_f64(value, lineno, "tile_movement_epsilon")?;
+            if !(0.00001..=0.1).contains(&v) {
+                return Err(miette!(
+                    "line {lineno}: tile_movement_epsilon {value:?}: must be between 0.00001 and 0.1"
+                ));
+            }
+            set_tile_movement_spring(&mut config.animations.tile_movement.0, |p| p.epsilon = v);
         }
 
-        "crossfade_curve" => {
-            // Easing curve for the move crossfade. See `Curve` in
-            // `sol-config/src/animations.rs` for valid names.
-            config.crossfade.curve = parse_curve(value, lineno)?;
+        // Window open animation (fade-in + zoom-in 0.5 → 1.0).
+        // Driven by an easing curve over `window_open_duration_ms`.
+        "window_open" => {
+            let enabled = parse_on_off(value, lineno, "window_open")?;
+            config.animations.window_open.anim.off = !enabled;
+        }
+        "window_open_duration_ms" => {
+            let v = value
+                .parse::<u32>()
+                .map_err(|e| miette!("line {lineno}: window_open_duration_ms {value:?}: {e}"))?;
+            set_easing(&mut config.animations.window_open.anim, |p| p.duration_ms = v);
+        }
+        "window_open_curve" => {
+            let curve = parse_curve(value, lineno)?;
+            set_easing(&mut config.animations.window_open.anim, |p| p.curve = curve);
+        }
+
+        // Window close animation (fade-out + zoom-out 1.0 → 0.8).
+        "window_close" => {
+            let enabled = parse_on_off(value, lineno, "window_close")?;
+            config.animations.window_close.anim.off = !enabled;
+        }
+        "window_close_duration_ms" => {
+            let v = value
+                .parse::<u32>()
+                .map_err(|e| miette!("line {lineno}: window_close_duration_ms {value:?}: {e}"))?;
+            set_easing(&mut config.animations.window_close.anim, |p| p.duration_ms = v);
+        }
+        "window_close_curve" => {
+            let curve = parse_curve(value, lineno)?;
+            set_easing(&mut config.animations.window_close.anim, |p| p.curve = curve);
         }
 
         // ──── Parse-and-ignore (not yet implemented in niri's master-stack rework) ────
@@ -234,21 +289,50 @@ fn parse_f64(s: &str, lineno: usize, name: &str) -> miette::Result<f64> {
         .map_err(|e| miette!("line {lineno}: {name} = {s:?}: {e}"))
 }
 
-/// Parse a Hyprland-style on/off value (also accepts true/false, 1/0, yes/no).
-/// Anything else is rejected with a clear error.
-fn parse_on_off(s: &str, lineno: usize, name: &str) -> miette::Result<bool> {
-    match s.to_ascii_lowercase().as_str() {
-        "on" | "true" | "yes" | "1" => Ok(true),
-        "off" | "false" | "no" | "0" => Ok(false),
-        _ => Err(miette!(
-            "line {lineno}: {name} {s:?}: expected on/off (true/false, yes/no, 1/0)"
-        )),
-    }
+/// Mutate the tile-movement spring params, switching `Animation.kind` to
+/// `Kind::Spring` if it wasn't already. Sol's flat config only exposes
+/// spring tuning for tile motion; if a KDL config layer had set an easing
+/// curve, this coerces back to a spring with the new override applied on
+/// top of the default spring params.
+fn set_tile_movement_spring(
+    anim: &mut crate::animations::Animation,
+    f: impl FnOnce(&mut crate::animations::SpringParams),
+) {
+    use crate::animations::SpringParams;
+    let mut params = match anim.kind {
+        Kind::Spring(p) => p,
+        _ => SpringParams {
+            damping_ratio: 1.,
+            stiffness: 600,
+            epsilon: 0.0001,
+        },
+    };
+    f(&mut params);
+    anim.kind = Kind::Spring(params);
 }
 
-/// Parse an easing curve name into [`Curve`]. Names match niri's KDL config
-/// (kebab-case), case-insensitive: `linear`, `ease-out-quad`, `ease-out-cubic`,
-/// `ease-out-expo`. `cubic-bezier(x1,y1,x2,y2)` is supported as an inline form.
+/// Mutate the easing params of an animation. Switches `Animation.kind`
+/// to `Kind::Easing` if it wasn't already; the user can mix spring + easing
+/// at the per-property level in KDL, but the flat sol.conf format only
+/// drives easing for open/close.
+fn set_easing(
+    anim: &mut crate::animations::Animation,
+    f: impl FnOnce(&mut EasingParams),
+) {
+    let mut params = match anim.kind {
+        Kind::Easing(p) => p,
+        _ => EasingParams {
+            duration_ms: 150,
+            curve: Curve::EaseOutQuad,
+        },
+    };
+    f(&mut params);
+    anim.kind = Kind::Easing(params);
+}
+
+/// Parse an easing curve name into [`Curve`]. Names match niri's KDL
+/// config (kebab-case), case-insensitive. `cubic-bezier(x1,y1,x2,y2)` is
+/// supported as an inline form.
 fn parse_curve(s: &str, lineno: usize) -> miette::Result<Curve> {
     let lower = s.to_ascii_lowercase();
     let trimmed = lower.trim();
@@ -265,7 +349,9 @@ fn parse_curve(s: &str, lineno: usize) -> miette::Result<Curve> {
             let x2 = nums.next().and_then(|r| r.ok());
             let y2 = nums.next().and_then(|r| r.ok());
             match (x1, y1, x2, y2) {
-                (Some(x1), Some(y1), Some(x2), Some(y2)) => Ok(Curve::CubicBezier(x1, y1, x2, y2)),
+                (Some(x1), Some(y1), Some(x2), Some(y2)) => {
+                    Ok(Curve::CubicBezier(x1, y1, x2, y2))
+                }
                 _ => Err(miette!(
                     "line {lineno}: cubic-bezier expects four comma-separated numbers"
                 )),
@@ -275,6 +361,18 @@ fn parse_curve(s: &str, lineno: usize) -> miette::Result<Curve> {
             "line {lineno}: unknown curve {s:?}: expected one of \
              linear, ease-out-quad, ease-out-cubic, ease-out-expo, \
              cubic-bezier(x1,y1,x2,y2)"
+        )),
+    }
+}
+
+/// Parse a Hyprland-style on/off value (also accepts true/false, 1/0, yes/no).
+/// Anything else is rejected with a clear error.
+fn parse_on_off(s: &str, lineno: usize, name: &str) -> miette::Result<bool> {
+    match s.to_ascii_lowercase().as_str() {
+        "on" | "true" | "yes" | "1" => Ok(true),
+        "off" | "false" | "no" | "0" => Ok(false),
+        _ => Err(miette!(
+            "line {lineno}: {name} {s:?}: expected on/off (true/false, yes/no, 1/0)"
         )),
     }
 }

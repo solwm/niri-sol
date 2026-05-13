@@ -80,7 +80,6 @@ pub mod floating;
 pub mod focus_ring;
 pub mod insert_hint_element;
 pub mod monitor;
-pub mod moving_snapshot;
 pub mod opening_window;
 pub mod scrolling;
 pub mod shadow;
@@ -403,8 +402,6 @@ pub struct Options {
     pub inactive_alpha: Option<f32>,
     /// Force the background-blur effect on unfocused windows.
     pub inactive_blur: bool,
-    /// Tile-movement crossfade params (duration + curve).
-    pub crossfade: sol_config::Crossfade,
     // Debug flags.
     pub disable_resize_throttling: bool,
     pub disable_transactions: bool,
@@ -668,7 +665,6 @@ impl Options {
             blur: config.blur,
             inactive_alpha: config.inactive_alpha,
             inactive_blur: config.inactive_blur,
-            crossfade: config.crossfade,
             disable_resize_throttling: config.debug.disable_resize_throttling,
             disable_transactions: config.debug.disable_transactions,
             deactivate_unfocused_windows: config.debug.deactivate_unfocused_windows,
