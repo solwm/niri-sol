@@ -242,8 +242,3 @@ impl<'render> RenderElement<TtyRenderer<'render>> for TransparencyRenderElement 
     }
 }
 
-// Compile-time sanity check that DamageSet's location of `Rectangle` is the
-// type we expect. (No code generated; only here to make sure imports stay
-// referenced for review even if the body changes.)
-#[allow(dead_code)]
-fn _unused_dmgset(_d: DamageSet<i32, Physical>) {}

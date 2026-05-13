@@ -49,12 +49,10 @@ void main() {
     tile = vec4(tile.rgb, 1.0);
 #endif
 
-    // `gl_FragCoord.xy` has origin at the bottom-left of the viewport; the
-    // wallpaper offscreen is rendered top-down. Flip Y to align them.
-    vec2 bg_uv = vec2(
-        gl_FragCoord.x / backdrop_tex_size.x,
-        1.0 - gl_FragCoord.y / backdrop_tex_size.y
-    );
+    // Sample the wallpaper offscreen at the same output pixel position
+    // we're writing to. The offscreen is sized to output physical pixels
+    // and shares its Y origin with `gl_FragCoord`, so no flip is needed.
+    vec2 bg_uv = gl_FragCoord.xy / backdrop_tex_size;
     vec4 bg = texture2D(backdrop_tex, bg_uv);
 
     // `tile` is premultiplied. Apply `tex_alpha` (still premultiplied).
