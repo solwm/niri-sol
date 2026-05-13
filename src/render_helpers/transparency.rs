@@ -46,6 +46,12 @@ pub struct TransparencyRenderElement {
     /// sees `alpha = 1` on the element (so it picks the BLEND-OFF path);
     /// this is fed to the shader's `tex_alpha` uniform.
     tex_alpha: f32,
+
+    /// When true, sample the blurred version of the wallpaper offscreen
+    /// (frosted-glass effect for inactive tiles). The caller must have
+    /// called `backdrop_buffer.prepare(renderer, true)` in the same frame
+    /// so the blurred texture is populated.
+    blur: bool,
 }
 
 impl TransparencyRenderElement {
@@ -53,11 +59,13 @@ impl TransparencyRenderElement {
         inner: OffscreenRenderElement,
         backdrop_buffer: Rc<RefCell<EffectBuffer>>,
         tex_alpha: f32,
+        blur: bool,
     ) -> Self {
         Self {
             inner,
             backdrop_buffer,
             tex_alpha,
+            blur,
         }
     }
 }
@@ -118,7 +126,7 @@ impl RenderElement<GlesRenderer> for TransparencyRenderElement {
         opaque_regions: &[Rectangle<i32, Physical>],
         _cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
-        let backdrop_texture = match self.backdrop_buffer.borrow_mut().render(frame, false) {
+        let backdrop_texture = match self.backdrop_buffer.borrow_mut().render(frame, self.blur) {
             Ok(t) => t,
             Err(_) => {
                 return <OffscreenRenderElement as RenderElement<GlesRenderer>>::draw(

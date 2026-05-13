@@ -1422,6 +1422,15 @@ impl<W: LayoutElement> Tile<W> {
             // the fractional alpha exactly once, at the final composite.
             let mut ctx = ctx.as_gles();
 
+            // Frosted-glass: sample the BLURRED wallpaper for unfocused
+            // tiles when `inactive_blur` is on. Active tiles always sample
+            // the unblurred backdrop. Surface-level blur regions / window-
+            // rule blur are still handled by the existing BackgroundEffect
+            // path inside `render_inner` and end up baked into the
+            // offscreen — but for the common inactive-window case this is
+            // a much cheaper and glitch-free path.
+            let should_blur = !is_active && self.options.inactive_blur;
+
             // Force the wallpaper offscreen to be ready. In pure
             // win_alpha/alpha-animation scenarios (no inactive_blur, no
             // surface blur region, no xray window rule), nothing in
@@ -1432,7 +1441,7 @@ impl<W: LayoutElement> Tile<W> {
             // so a direct `prepare()` populates the offscreen for us.
             let backdrop_buffer = ctx.xray.and_then(|x| {
                 let buffer = x.background[ctx.target as usize].clone();
-                let ok = buffer.borrow_mut().prepare(ctx.renderer, false);
+                let ok = buffer.borrow_mut().prepare(ctx.renderer, should_blur);
                 ok.then_some(buffer)
             });
 
@@ -1462,6 +1471,7 @@ impl<W: LayoutElement> Tile<W> {
                                 elem,
                                 backdrop_buffer,
                                 effective_alpha,
+                                should_blur,
                             );
                         push(TileRenderElement::Transparency(wrapped));
                     } else {
