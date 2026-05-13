@@ -96,6 +96,14 @@ pub struct Tile<W: LayoutElement> {
     /// The animation of the tile's opacity.
     pub(super) alpha_animation: Option<AlphaAnimation>,
 
+    /// Offscreen used by the manual-blend transparency pipeline. Engaged
+    /// whenever the tile's effective alpha (window-rule opacity *
+    /// inactive_alpha * alpha-animation progress) is `< 1` — captures the
+    /// tile's surfaces at full opacity, then `TransparencyRenderElement`
+    /// composites them over the wallpaper backdrop with the effective alpha
+    /// applied in the shader. Lazy: no GL allocation until first use.
+    transparency_offscreen: OffscreenBuffer,
+
     /// Offset during the initial interactive move rubberband.
     pub(super) interactive_move_offset: Point<f64, Logical>,
 
@@ -131,6 +139,7 @@ niri_render_elements! {
         Shadow = ShadowRenderElement,
         ClippedSurface = ClippedSurfaceRenderElement<R>,
         Offscreen = OffscreenRenderElement,
+        Transparency = crate::render_helpers::transparency::TransparencyRenderElement,
         ExtraDamage = ExtraDamage,
         BackgroundEffect = BackgroundEffectElement,
     }
@@ -171,7 +180,6 @@ pub(super) struct AlphaAnimation {
     /// semitransparent, then hold it at semitransparent for a while, until the operation
     /// completes.
     pub(super) hold_after_done: bool,
-    offscreen: OffscreenBuffer,
 }
 
 impl<W: LayoutElement> Tile<W> {
@@ -205,6 +213,7 @@ impl<W: LayoutElement> Tile<W> {
             move_x_animation: None,
             move_y_animation: None,
             alpha_animation: None,
+            transparency_offscreen: OffscreenBuffer::default(),
             interactive_move_offset: Point::from((0., 0.)),
             unmap_snapshot: None,
             rounded_corner_damage: Default::default(),
@@ -631,20 +640,51 @@ impl<W: LayoutElement> Tile<W> {
         self.move_y_animation = None;
     }
 
+    /// Effective per-tile opacity factor from window rules + global
+    /// inactive-window dim, interpolated towards `1.0` as the tile reaches
+    /// fullscreen.
+    ///
+    /// This is the alpha that used to be applied per-surface inside
+    /// `render_inner` via `WaylandSurfaceRenderElement` BLEND-on draws. We
+    /// now compute it at the outer level too so that any tile with
+    /// `win_alpha < 1` can be routed through the offscreen +
+    /// `TransparencyRenderElement` manual-blend pipeline.
+    pub(super) fn compute_win_alpha(&self, is_active: bool) -> f32 {
+        let fullscreen_progress = self.fullscreen_progress();
+
+        let win_alpha = if self.window.is_ignoring_opacity_window_rule() {
+            1.
+        } else {
+            let alpha = self.window.rules().opacity.unwrap_or(1.).clamp(0., 1.);
+            // Interpolate towards alpha = 1. at fullscreen.
+            let p = fullscreen_progress as f32;
+            alpha * (1. - p) + 1. * p
+        };
+
+        // Apply the global `inactive_alpha` config knob to unfocused windows
+        // on top of any per-window-rule opacity. Skipped at fullscreen since
+        // we interpolate alpha back to 1 there.
+        if !is_active {
+            let dim = self.options.inactive_alpha.unwrap_or(1.0).clamp(0., 1.);
+            let p = fullscreen_progress as f32;
+            win_alpha * (dim * (1. - p) + 1. * p)
+        } else {
+            win_alpha
+        }
+    }
+
     pub fn animate_alpha(&mut self, from: f64, to: f64, config: sol_config::Animation) {
         let from = from.clamp(0., 1.);
         let to = to.clamp(0., 1.);
 
-        let (current, offscreen) = if let Some(alpha) = self.alpha_animation.take() {
-            (alpha.anim.clamped_value(), alpha.offscreen)
-        } else {
-            (from, OffscreenBuffer::default())
-        };
+        let current = self
+            .alpha_animation
+            .take()
+            .map_or(from, |alpha| alpha.anim.clamped_value());
 
         self.alpha_animation = Some(AlphaAnimation {
             anim: Animation::new(self.clock.clone(), current, to, 0., config),
             hold_after_done: false,
-            offscreen,
         });
     }
 
@@ -1028,6 +1068,12 @@ impl<W: LayoutElement> Tile<W> {
         mut xray_pos: XrayPos,
         focus_ring: bool,
         is_active: bool,
+        // When false, surfaces render at full opacity into the caller's
+        // target (typically an offscreen) and the effective alpha is applied
+        // later by `TransparencyRenderElement`'s manual-blend shader. This
+        // dodges per-surface BLEND-on draws — the NVIDIA bottom-right
+        // L-glitch only manifests on that path.
+        apply_win_alpha: bool,
         push: &mut dyn FnMut(TileRenderElement<R>),
     ) {
         let _span = tracy_client::span!("Tile::render_inner");
@@ -1036,27 +1082,10 @@ impl<W: LayoutElement> Tile<W> {
         let fullscreen_progress = self.fullscreen_progress();
         let expanded_progress = self.expanded_progress();
 
-        let win_alpha = if self.window.is_ignoring_opacity_window_rule() {
-            1.
+        let win_alpha = if apply_win_alpha {
+            self.compute_win_alpha(is_active)
         } else {
-            let alpha = self.window.rules().opacity.unwrap_or(1.).clamp(0., 1.);
-
-            // Interpolate towards alpha = 1. at fullscreen.
-            let p = fullscreen_progress as f32;
-            alpha * (1. - p) + 1. * p
-        };
-
-        // Apply the global `inactive_alpha` config knob to unfocused windows on top
-        // of any per-window-rule opacity. Multiplying preserves rule-based dimming —
-        // a window rule that already pins a window at 0.5 will dim further when
-        // unfocused, which matches user intuition. Skipped at fullscreen because
-        // that path interpolates alpha back to 1 anyway.
-        let win_alpha = if !is_active {
-            let dim = self.options.inactive_alpha.unwrap_or(1.0).clamp(0., 1.);
-            let p = fullscreen_progress as f32;
-            win_alpha * (dim * (1. - p) + 1. * p)
-        } else {
-            win_alpha
+            1.0
         };
 
         // This is here rather than in render_offset() because render_offset() is currently assumed
@@ -1343,10 +1372,16 @@ impl<W: LayoutElement> Tile<W> {
 
         let scale = Scale::from(self.scale);
 
-        let tile_alpha = self
+        let tile_anim_alpha = self
             .alpha_animation
             .as_ref()
             .map_or(1., |alpha| alpha.anim.clamped_value()) as f32;
+        let win_alpha = self.compute_win_alpha(is_active);
+
+        // The combined opacity factor for this tile. When `< 1` we route
+        // through offscreen + manual-blend so per-surface BLEND-on draws
+        // (the NVIDIA L-glitch source) are completely sidestepped.
+        let effective_alpha = (tile_anim_alpha * win_alpha).clamp(0., 1.);
 
         let mut pushed = false;
         self.window().set_offscreen_data(None);
@@ -1360,6 +1395,7 @@ impl<W: LayoutElement> Tile<W> {
                 xray_pos,
                 focus_ring,
                 is_active,
+                true,
                 &mut |elem| elements.push(elem),
             );
             match open.render(
@@ -1368,7 +1404,7 @@ impl<W: LayoutElement> Tile<W> {
                 self.animated_tile_size(),
                 location,
                 scale,
-                tile_alpha,
+                tile_anim_alpha,
             ) {
                 Ok((elem, data)) => {
                     self.window().set_offscreen_data(Some(data));
@@ -1379,8 +1415,27 @@ impl<W: LayoutElement> Tile<W> {
                     warn!("error rendering window opening animation: {err:?}");
                 }
             }
-        } else if let Some(alpha) = &self.alpha_animation {
+        } else if effective_alpha < 1.0 - 1e-3 {
+            // Tile is at fractional opacity (animation, window rule, or
+            // inactive dim). Route through the manual-blend offscreen so
+            // every surface inside renders BLEND-off at alpha=1 and we apply
+            // the fractional alpha exactly once, at the final composite.
             let mut ctx = ctx.as_gles();
+
+            // Force the wallpaper offscreen to be ready. In pure
+            // win_alpha/alpha-animation scenarios (no inactive_blur, no
+            // surface blur region, no xray window rule), nothing in
+            // `render_inner` triggers `BackgroundEffect::render` with
+            // `options.xray = true`, so `Xray::render` never runs and
+            // `background.prepare()` is never called. The wallpaper
+            // elements are already queued by `Niri::fill_xray_elements()`,
+            // so a direct `prepare()` populates the offscreen for us.
+            let backdrop_buffer = ctx.xray.and_then(|x| {
+                let buffer = x.background[ctx.target as usize].clone();
+                let ok = buffer.borrow_mut().prepare(ctx.renderer, false);
+                ok.then_some(buffer)
+            });
+
             let mut elements = Vec::new();
             self.render_inner(
                 ctx.r(),
@@ -1388,15 +1443,34 @@ impl<W: LayoutElement> Tile<W> {
                 xray_pos,
                 focus_ring,
                 is_active,
+                false,
                 &mut |elem| elements.push(elem),
             );
-            match alpha.offscreen.render(ctx.renderer, scale, &elements) {
+            match self
+                .transparency_offscreen
+                .render(ctx.renderer, scale, &elements)
+            {
                 Ok((elem, _sync, data)) => {
                     let offset = elem.offset();
-                    let elem = elem.with_alpha(tile_alpha).with_offset(location + offset);
+                    let elem = elem.with_offset(location + offset);
 
                     self.window().set_offscreen_data(Some(data));
-                    push(elem.into());
+
+                    if let Some(backdrop_buffer) = backdrop_buffer {
+                        let wrapped =
+                            crate::render_helpers::transparency::TransparencyRenderElement::new(
+                                elem,
+                                backdrop_buffer,
+                                effective_alpha,
+                            );
+                        push(TileRenderElement::Transparency(wrapped));
+                    } else {
+                        // No xray context (e.g. rendering for a screencast
+                        // before xray is populated). Fall back to the old
+                        // BLEND-on path so we don't silently swallow tiles.
+                        let elem = elem.with_alpha(effective_alpha);
+                        push(elem.into());
+                    }
                     pushed = true;
                 }
                 Err(err) => {
@@ -1406,9 +1480,15 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         if !pushed {
-            self.render_inner(ctx, location, xray_pos, focus_ring, is_active, &mut |elem| {
-                push(elem)
-            });
+            self.render_inner(
+                ctx,
+                location,
+                xray_pos,
+                focus_ring,
+                is_active,
+                true,
+                &mut |elem| push(elem),
+            );
         }
     }
 

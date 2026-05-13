@@ -18,6 +18,13 @@ pub struct Shaders {
     pub resize: Option<ShaderProgram>,
     pub gradient_fade: Option<GlesTexProgram>,
     pub blur: Option<BlurProgram>,
+    /// Manual-alpha composite. Used to draw an alpha-animated tile offscreen
+    /// onto the framebuffer without GL BLEND: the shader samples the tile
+    /// AND a backdrop (the wallpaper-layer offscreen, sol's
+    /// `xray.background`), computes the alpha blend itself, and writes
+    /// opaque. Working around an NVIDIA glitch in the BLEND-on
+    /// read-modify-write path at the bottom-right of the framebuffer.
+    pub transparency: Option<GlesTexProgram>,
     pub custom_resize: RefCell<Option<ShaderProgram>>,
     pub custom_close: RefCell<Option<ShaderProgram>>,
     pub custom_open: RefCell<Option<ShaderProgram>>,
@@ -126,6 +133,20 @@ impl Shaders {
             })
             .ok();
 
+        let transparency = renderer
+            .compile_custom_texture_shader(
+                include_str!("transparency.frag"),
+                &[
+                    UniformName::new("backdrop_tex", UniformType::_1i),
+                    UniformName::new("tex_alpha", UniformType::_1f),
+                    UniformName::new("backdrop_tex_size", UniformType::_2f),
+                ],
+            )
+            .map_err(|err| {
+                warn!("error compiling transparency shader: {err:?}");
+            })
+            .ok();
+
         let resize = compile_resize_program(renderer, include_str!("resize.frag"))
             .map_err(|err| {
                 warn!("error compiling resize shader: {err:?}");
@@ -156,6 +177,7 @@ impl Shaders {
             resize,
             gradient_fade,
             blur,
+            transparency,
             custom_resize: RefCell::new(None),
             custom_close: RefCell::new(None),
             custom_open: RefCell::new(None),
