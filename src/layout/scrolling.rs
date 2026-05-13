@@ -822,13 +822,20 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn move_left(&mut self) -> bool {
         match self.focus {
             Focus::Stack(idx) => {
-                // Promote stack[idx] to master, demote current master to top of stack.
+                // Promote stack[idx] to master; demote current master to
+                // the same stack slot the promoted column vacated (NOT
+                // the top of the stack). Keeps the swap symmetric:
+                // doing move_left → move_right returns to the same
+                // arrangement.
                 let promoted = self.stack.remove(idx);
                 if let Some(old_master) = self.master.take() {
-                    self.stack.insert(0, old_master);
+                    self.stack.insert(idx, old_master);
                 }
                 self.master = Some(promoted);
                 self.focus = Focus::Master;
+                // Remember the slot so a later focus_right /
+                // move_right from master returns here.
+                self.last_stack_idx = Some(idx);
                 self.update_tile_sizes();
                 true
             }
@@ -943,20 +950,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn move_right(&mut self) -> bool {
         match self.focus {
             Focus::Master => {
-                if let Some(old_master) = self.master.take() {
-                    if self.stack.is_empty() {
-                        // Nothing to swap with; restore.
-                        self.master = Some(old_master);
-                        return false;
-                    }
-                    let new_master = self.stack.remove(0);
-                    self.master = Some(new_master);
-                    self.stack.insert(0, old_master);
-                    self.focus = Focus::Stack(0);
-                    self.update_tile_sizes();
-                    return true;
+                if self.stack.is_empty() {
+                    return false;
                 }
-                false
+                // Swap with the previously-focused stack row when we know
+                // it (the user just came from there via focus_left); else
+                // fall back to the top of the stack. Clamped because the
+                // stack may have shrunk since `last_stack_idx` was set.
+                let idx = self
+                    .last_stack_idx
+                    .filter(|i| *i < self.stack.len())
+                    .unwrap_or(0);
+                let Some(old_master) = self.master.take() else {
+                    return false;
+                };
+                let new_master = self.stack.remove(idx);
+                self.master = Some(new_master);
+                self.stack.insert(idx, old_master);
+                self.focus = Focus::Stack(idx);
+                self.update_tile_sizes();
+                true
             }
             _ => false,
         }
