@@ -442,6 +442,20 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         activate: bool,
         _anim_config: Option<sol_config::Animation>,
     ) {
+        // A new window arriving forces the workspace back into normal
+        // tiling: any column that was in fullscreen / maximized takeover
+        // drops the flag, so the new window doesn't appear hidden
+        // underneath the takeover and the layout returns to master+stack.
+        let wa_size = self.working_area.size;
+        if let Some(m) = &mut self.master {
+            let _ = m.set_fullscreen(false);
+            let _ = m.set_maximized(false, wa_size);
+        }
+        for col in &mut self.stack {
+            let _ = col.set_fullscreen(false);
+            let _ = col.set_maximized(false, wa_size);
+        }
+
         column.update_config(
             self.view_size,
             self.working_area,
@@ -1278,7 +1292,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn render_above_top_layer(&self) -> bool {
-        false
+        // When a column is in fullscreen takeover (the CTRL+Tab path —
+        // covering the whole output at view_size), render it *above*
+        // the wlr-layer Top layer so the waybar / other Top-layer
+        // surfaces don't punch through the fullscreen tile.
+        // `is_pending_maximized` keeps the working_area takeover that
+        // already sits below the waybar, so it's not promoted.
+        if let Some(m) = &self.master {
+            if m.is_pending_fullscreen() {
+                return true;
+            }
+        }
+        self.stack.iter().any(|col| col.is_pending_fullscreen())
     }
 
     pub fn render<R: NiriRenderer>(

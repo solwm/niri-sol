@@ -804,10 +804,19 @@ impl LayoutElement for Mapped {
             let changed = state.size != Some(size);
             state.size = Some(size);
 
-            if mode.is_fullscreen() || self.is_pending_windowed_fullscreen {
+            // Sol's `toggle_fullscreen` / `toggle_zoom` are *layout-side*
+            // takeovers — the compositor paints the tile across the
+            // output, but the client should keep its normal UI (no F11
+            // takeover in Chrome, no full-bleed in fullscreen-aware
+            // apps). We only forward protocol `Fullscreen` when the user
+            // explicitly asks for windowed-fullscreen (the protocol-only
+            // action); regular `SizingMode::Fullscreen` is sent as
+            // Maximized so the client lays out normally inside the
+            // takeover area.
+            if self.is_pending_windowed_fullscreen {
                 state.states.set(xdg_toplevel::State::Fullscreen);
                 state.states.unset(xdg_toplevel::State::Maximized);
-            } else if mode.is_maximized() {
+            } else if mode.is_fullscreen() || mode.is_maximized() {
                 state.states.unset(xdg_toplevel::State::Fullscreen);
                 state.states.set(xdg_toplevel::State::Maximized);
             } else {
