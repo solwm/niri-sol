@@ -533,6 +533,25 @@ impl<W: LayoutElement> Tile<W> {
         } else {
             false
         };
+
+        // While the tile is sliding to a new slot (master↔stack swap,
+        // stack reorder), fade the focus ring almost out — at peak
+        // motion it'd otherwise dominate the visual and pull the eye
+        // away from the moving tile itself. `MoveAnimation::anim.value()`
+        // runs 1 → 0 over the spring, so a value near 1 means peak
+        // displacement. We dim the ring to ~15% at peak and ramp back
+        // up smoothly as the spring settles.
+        let move_progress_x = self
+            .move_x_animation
+            .as_ref()
+            .map_or(0., |m| m.anim.value().abs()) as f32;
+        let move_progress_y = self
+            .move_y_animation
+            .as_ref()
+            .map_or(0., |m| m.anim.value().abs()) as f32;
+        let move_progress = move_progress_x.max(move_progress_y).clamp(0., 1.);
+        let ring_motion_fade = 1.0 - move_progress * 0.85;
+
         let radius = radius.expanded_by(self.focus_ring.width() as f32);
         self.focus_ring.update_render_elements(
             animated_tile_size,
@@ -542,7 +561,7 @@ impl<W: LayoutElement> Tile<W> {
             view_rect,
             radius,
             self.scale,
-            1. - expanded_progress as f32,
+            (1. - expanded_progress as f32) * ring_motion_fade,
         );
 
         self.fullscreen_backdrop.resize(animated_tile_size);
