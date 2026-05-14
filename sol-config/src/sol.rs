@@ -241,6 +241,21 @@ fn apply_setting(config: &mut Config, key: &str, value: &str, lineno: usize) -> 
             set_tile_movement_spring(&mut config.animations.tile_movement.0, |p| p.epsilon = v);
         }
 
+        // Bezier-easing tuning for tile movement. The default is a
+        // Hyprland-style overshoot curve (see `wind_curve` in
+        // animations.rs); these knobs let users retune duration + curve
+        // without dropping back to a spring.
+        "tile_movement_duration_ms" => {
+            let v = value
+                .parse::<u32>()
+                .map_err(|e| miette!("line {lineno}: tile_movement_duration_ms {value:?}: {e}"))?;
+            set_easing(&mut config.animations.tile_movement.0, |p| p.duration_ms = v);
+        }
+        "tile_movement_curve" => {
+            let curve = parse_curve(value, lineno)?;
+            set_easing(&mut config.animations.tile_movement.0, |p| p.curve = curve);
+        }
+
         // Window open animation (fade-in + zoom-in 0.5 → 1.0).
         // Driven by an easing curve over `window_open_duration_ms`.
         "window_open" => {

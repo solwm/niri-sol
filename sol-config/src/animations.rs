@@ -4,6 +4,16 @@ use knuffel::Decode as _;
 use crate::utils::{expect_only_children, parse_arg_node, MergeWith};
 use crate::FloatOrInt;
 
+/// Hyprland-style "snappy with a tiny overshoot" cubic-bezier curve.
+/// `(0.05, 0.9, 0.1, 1.05)` — explosive start, slight overshoot near
+/// the end, quick settle. Used as the default for every animation that
+/// previously defaulted to either a critically-damped spring or a
+/// plain ease-out; gives the compositor a more visibly physical feel
+/// without committing to true spring physics.
+const fn wind_curve() -> Curve {
+    Curve::CubicBezier(0.05, 0.9, 0.1, 1.05)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Animations {
     pub off: bool,
@@ -168,8 +178,8 @@ impl Default for WindowOpenAnim {
             anim: Animation {
                 off: false,
                 kind: Kind::Easing(EasingParams {
-                    duration_ms: 150,
-                    curve: Curve::EaseOutExpo,
+                    duration_ms: 250,
+                    curve: wind_curve(),
                 }),
             },
             custom_shader: None,
@@ -189,8 +199,8 @@ impl Default for WindowCloseAnim {
             anim: Animation {
                 off: false,
                 kind: Kind::Easing(EasingParams {
-                    duration_ms: 150,
-                    curve: Curve::EaseOutQuad,
+                    duration_ms: 220,
+                    curve: wind_curve(),
                 }),
             },
             custom_shader: None,
@@ -205,10 +215,9 @@ impl Default for HorizontalViewMovementAnim {
     fn default() -> Self {
         Self(Animation {
             off: false,
-            kind: Kind::Spring(SpringParams {
-                damping_ratio: 1.,
-                stiffness: 800,
-                epsilon: 0.0001,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 280,
+                curve: wind_curve(),
             }),
         })
     }
@@ -221,10 +230,9 @@ impl Default for WindowMovementAnim {
     fn default() -> Self {
         Self(Animation {
             off: false,
-            kind: Kind::Spring(SpringParams {
-                damping_ratio: 1.,
-                stiffness: 800,
-                epsilon: 0.0001,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 220,
+                curve: wind_curve(),
             }),
         })
     }
@@ -242,10 +250,9 @@ impl Default for TileMovementAnim {
     fn default() -> Self {
         Self(Animation {
             off: false,
-            kind: Kind::Spring(SpringParams {
-                damping_ratio: 1.,
-                stiffness: 600,
-                epsilon: 0.0001,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 260,
+                curve: wind_curve(),
             }),
         })
     }
@@ -262,10 +269,9 @@ impl Default for WindowResizeAnim {
         Self {
             anim: Animation {
                 off: false,
-                kind: Kind::Spring(SpringParams {
-                    damping_ratio: 1.,
-                    stiffness: 800,
-                    epsilon: 0.0001,
+                kind: Kind::Easing(EasingParams {
+                    duration_ms: 220,
+                    curve: wind_curve(),
                 }),
             },
             custom_shader: None,
