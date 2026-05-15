@@ -525,6 +525,21 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     /// Removes the column at unified index (0 = master, 1.. = stack[idx-1]) and fixes focus.
     fn take_column_at(&mut self, column_idx: usize) -> Column<W> {
+        // Snapshot every surviving column's pre-removal slot so we can
+        // spring them into their new slots after the layout reshuffles.
+        // Without this, the surviving tiles snap instantly while the
+        // closing-window snapshot fades out at the old position —
+        // visually disconnected.
+        let pre: Vec<(W::Id, Point<f64, Logical>)> = self
+            .column_layout()
+            .into_iter()
+            .filter(|(uidx, _, _)| *uidx != column_idx)
+            .filter_map(|(uidx, pos, _)| {
+                self.column_by_unified_idx(uidx)
+                    .map(|col| (col.tile.window().id().clone(), pos))
+            })
+            .collect();
+
         let removed = if column_idx == 0 {
             // Master removal: promote stack[0] if any, else master becomes None.
             let removed = self.master.take().expect("master expected");
@@ -540,6 +555,34 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         };
 
         self.update_tile_sizes();
+
+        // Spring each surviving tile from its old slot to its new slot
+        // — same `tile_movement` config the master↔stack swap uses, so
+        // both kinds of layout mutation feel consistent.
+        let anim_cfg = self.options.animations.tile_movement.0;
+        let post_layout = self.column_layout();
+        for (id, old_pos) in pre {
+            let new_pos = post_layout.iter().find_map(|(uidx, pos, _)| {
+                self.column_by_unified_idx(*uidx)
+                    .and_then(|c| (c.tile.window().id() == &id).then_some(*pos))
+            });
+            let Some(new_pos) = new_pos else {
+                continue;
+            };
+            let delta = old_pos - new_pos;
+            if delta.x.abs() < 0.5 && delta.y.abs() < 0.5 {
+                continue;
+            }
+            if let Some(col) = self.find_column_by_id_mut(&id) {
+                if delta.x.abs() >= 0.5 {
+                    col.tile.animate_move_x_from_with_config(delta.x, anim_cfg);
+                }
+                if delta.y.abs() >= 0.5 {
+                    col.tile.animate_move_y_from_with_config(delta.y, anim_cfg);
+                }
+            }
+        }
+
         removed
     }
 
@@ -1333,6 +1376,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 );
             }
             return;
+        }
+
+        // Fade-out + zoom-out snapshots of tiles that just unmapped.
+        // niri's render pipeline draws back-to-front: elements pushed
+        // first end up *on top*. Push closing-window snapshots before
+        // the live tiles so they sit visibly on top during the brief
+        // animation window (matches floating.rs's pattern).
+        let view_rect = Rectangle::from_size(self.view_size);
+        let scale = Scale::from(self.scale);
+        for closing in self.closing_windows.iter().rev() {
+            let elem = closing.render(ctx.as_gles(), view_rect, scale);
+            push(ScrollingSpaceRenderElement::ClosingWindow(elem));
         }
 
         let layout = self.column_layout();
