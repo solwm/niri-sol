@@ -325,6 +325,16 @@ pub enum Action {
     ExpandColumnToAvailableWidth,
     SwitchLayout(#[knuffel(argument, str)] LayoutSwitchTarget),
     ShowHotkeyOverlay,
+    /// Sol-only modal: enters a resize mode where `h`/`l` adjust the
+    /// master pane's width, Escape exits, and all other keys are
+    /// swallowed. Triggered by the `resize_mode` bind in sol.conf.
+    #[knuffel(skip)]
+    EnterResizeMode,
+    /// Sol-only: nudge the master pane's width by `delta` (fraction of
+    /// the working area, e.g. `0.05` = +5%). Used by the resize-mode
+    /// modal; not directly bindable from the config.
+    #[knuffel(skip)]
+    NudgeMasterRatio(f64),
     MoveWorkspaceToMonitorLeft,
     MoveWorkspaceToMonitorRight,
     MoveWorkspaceToMonitorDown,

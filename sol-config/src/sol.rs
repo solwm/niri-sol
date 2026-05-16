@@ -534,12 +534,10 @@ fn parse_action(name: &str, rest: &str, lineno: usize) -> miette::Result<Action>
                 .map_err(|e| miette!("line {lineno}: move_to_workspace index `{rest}`: {e}"))?;
             Action::MoveWindowToWorkspace(WorkspaceReference::Index(n), false)
         }
-        // Sol-only modal that niri does not implement yet. Bind to a no-op (overlay show) so the
-        // key isn't dead and we don't error out the entire reload.
-        "resize_mode" => {
-            warn!("sol config line {lineno}: resize_mode is not implemented; bound to ShowHotkeyOverlay");
-            Action::ShowHotkeyOverlay
-        }
+        // Sol-only: enters the modal resize mode (h/l adjusts master,
+        // Escape exits). All keys are intercepted while the mode is on.
+        "resize_mode" => Action::EnterResizeMode,
+
         other => {
             return Err(miette!("line {lineno}: unknown action `{other}`"));
         }

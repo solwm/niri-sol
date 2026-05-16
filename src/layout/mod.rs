@@ -3199,6 +3199,15 @@ impl<W: LayoutElement> Layout<W> {
         workspace.set_window_width(window, change);
     }
 
+    /// Adjust the active workspace's master-pane ratio by `delta`
+    /// (fraction of working area; `±0.05` matches the resize-mode
+    /// step). Springs every tile to its new slot via `tile_movement`.
+    pub fn nudge_master_ratio(&mut self, delta: f64) {
+        if let Some(ws) = self.active_workspace_mut() {
+            ws.nudge_master_ratio(delta);
+        }
+    }
+
     pub fn set_window_height(&mut self, window: Option<&W::Id>, change: SizeChange) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {

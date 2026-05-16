@@ -322,6 +322,11 @@ pub struct Niri {
     pub single_pixel_buffer_state: SinglePixelBufferState,
 
     pub seat: Seat<State>,
+    /// Sol-only modal resize state. When `true`, all keyboard input is
+    /// intercepted by the compositor: `h`/`l` nudge the master pane,
+    /// Escape exits the mode, everything else is swallowed (not
+    /// forwarded to the focused client).
+    pub resize_mode: bool,
     /// Scancodes of the keys to suppress.
     pub suppressed_keys: HashSet<Keycode>,
     /// Button codes of the mouse buttons to suppress.
@@ -2607,6 +2612,7 @@ impl Niri {
             ext_data_control_state,
             popups: PopupManager::default(),
             popup_grab: None,
+            resize_mode: false,
             suppressed_keys: HashSet::new(),
             suppressed_buttons: HashSet::new(),
             bind_cooldown_timers: HashMap::new(),

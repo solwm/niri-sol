@@ -1289,6 +1289,10 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn nudge_master_ratio(&mut self, delta: f64) {
+        self.scrolling.nudge_master_ratio(delta);
+    }
+
     pub fn set_window_height(&mut self, window: Option<&W::Id>, change: SizeChange) {
         if window.map_or(self.floating_is_active.get(), |id| {
             self.floating.has_window(id)

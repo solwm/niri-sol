@@ -505,6 +505,38 @@ impl State {
                     return FilterResult::Intercept(None);
                 }
 
+                // Sol-only modal resize mode (entered via the
+                // `resize_mode` bind). While active, every keyboard
+                // event is captured by the compositor:
+                //   h        → narrow master by 5%
+                //   l        → widen master by 5%
+                //   Escape   → exit
+                //   anything → swallowed silently (don't leak to client)
+                // Tracking the press in `suppressed_keys` so the
+                // matching release is also swallowed.
+                if this.niri.resize_mode {
+                    if pressed {
+                        this.niri.suppressed_keys.insert(key_code);
+                        match raw {
+                            Some(Keysym::h) | Some(Keysym::H) => {
+                                this.do_action(Action::NudgeMasterRatio(-0.05), false);
+                            }
+                            Some(Keysym::l) | Some(Keysym::L) => {
+                                this.do_action(Action::NudgeMasterRatio(0.05), false);
+                            }
+                            Some(Keysym::Escape) => {
+                                this.niri.resize_mode = false;
+                            }
+                            _ => {}
+                        }
+                        return FilterResult::Intercept(None);
+                    } else if this.niri.suppressed_keys.remove(&key_code) {
+                        return FilterResult::Intercept(None);
+                    } else {
+                        return FilterResult::Forward;
+                    }
+                }
+
                 // Check if all modifiers were released while the MRU UI was open. If so, close the
                 // UI (which will also transfer the focus to the current MRU UI selection).
                 if this.niri.window_mru_ui.is_open() && !pressed && modifiers.is_empty() {
@@ -2065,6 +2097,16 @@ impl State {
                     #[cfg(feature = "dbus")]
                     self.niri.a11y_announce_hotkey_overlay();
                 }
+            }
+            // Sol-only: enter the modal resize mode. The actual key
+            // interception happens in `on_keyboard` (early-return path),
+            // gated on `niri.resize_mode`.
+            Action::EnterResizeMode => {
+                self.niri.resize_mode = true;
+            }
+            Action::NudgeMasterRatio(delta) => {
+                self.niri.layout.nudge_master_ratio(delta);
+                self.niri.queue_redraw_all();
             }
             Action::MoveWorkspaceToMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {

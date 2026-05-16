@@ -1264,6 +1264,55 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // No-op.
     }
 
+    /// Adjust the master-pane width as a fraction of the working area,
+    /// clamped to a comfortable range. Springs every visible tile from
+    /// its pre-change slot to the new layout — same `tile_movement`
+    /// config the swap + close paths use, so the resize-mode nudge
+    /// feels consistent with the rest of the layout's motion.
+    pub fn nudge_master_ratio(&mut self, delta: f64) {
+        let new_ratio = (self.master_ratio + delta).clamp(0.15, 0.85);
+        if (new_ratio - self.master_ratio).abs() < 1e-6 {
+            return;
+        }
+
+        // Snapshot every column's pre-nudge slot.
+        let pre: Vec<(W::Id, Point<f64, Logical>)> = self
+            .column_layout()
+            .into_iter()
+            .filter_map(|(uidx, pos, _)| {
+                self.column_by_unified_idx(uidx)
+                    .map(|col| (col.tile.window().id().clone(), pos))
+            })
+            .collect();
+
+        self.master_ratio = new_ratio;
+        self.update_tile_sizes();
+
+        let anim_cfg = self.options.animations.tile_movement.0;
+        let post_layout = self.column_layout();
+        for (id, old_pos) in pre {
+            let new_pos = post_layout.iter().find_map(|(uidx, pos, _)| {
+                self.column_by_unified_idx(*uidx)
+                    .and_then(|c| (c.tile.window().id() == &id).then_some(*pos))
+            });
+            let Some(new_pos) = new_pos else {
+                continue;
+            };
+            let delta = old_pos - new_pos;
+            if delta.x.abs() < 0.5 && delta.y.abs() < 0.5 {
+                continue;
+            }
+            if let Some(col) = self.find_column_by_id_mut(&id) {
+                if delta.x.abs() >= 0.5 {
+                    col.tile.animate_move_x_from_with_config(delta.x, anim_cfg);
+                }
+                if delta.y.abs() >= 0.5 {
+                    col.tile.animate_move_y_from_with_config(delta.y, anim_cfg);
+                }
+            }
+        }
+    }
+
     pub fn set_window_height(&mut self, _window: Option<&W::Id>, _change: SizeChange) {
         // No-op.
     }
