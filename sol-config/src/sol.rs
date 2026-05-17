@@ -41,6 +41,13 @@ pub fn parse_sol(_path: &Path, text: &str) -> miette::Result<Config> {
     // explicit keybinds (`workspace 1..5`) for workspace switching, so
     // a cursor-bumping-the-corner gesture just gets in the way.
     config.gestures.hot_corners.off = true;
+    // Register the GNOME-compatible DBus interfaces (DisplayConfig,
+    // Mutter.ScreenCast, gnome-shell screenshot, KeyboardMonitor, etc.)
+    // for dev runs too — not just `sol --session`. Most apps that
+    // query "what monitors exist" or "take a screenshot" reach for
+    // these without checking, so leaving them off makes `cargo r -r`
+    // sessions feel weirdly broken.
+    config.debug.dbus_interfaces_in_non_session_instances = true;
     // Don't pop up the hotkey-overlay help screen at sol startup.
     // niri's default is to show it on a fresh session; sol's bindings
     // are documented in sol.conf and the overlay just covers the

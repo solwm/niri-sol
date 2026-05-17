@@ -108,10 +108,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // Set the current desktop for xdg-desktop-portal.
-        env::set_var("XDG_CURRENT_DESKTOP", "sol");
-        // Ensure the session type is set to Wayland for xdg-autostart and Qt apps.
-        env::set_var("XDG_SESSION_TYPE", "wayland");
+    }
+
+    // Force XDG_SESSION_TYPE=wayland unconditionally (not just for `--session`).
+    // Chrome and other Ozone-based apps auto-detect their backend from this:
+    // if it's `tty` (inherited from a bare-TTY launch of sol), Chrome silently
+    // picks --ozone-platform=x11 via Xwayland, which on a Wayland compositor
+    // can only capture its own X11 windows — full-screen capture returns black.
+    env::set_var("XDG_SESSION_TYPE", "wayland");
+
+    // Set the current desktop for xdg-desktop-portal. The first token is
+    // the directory name xdg-desktop-portal will look up under
+    // ~/.config/xdg-desktop-portal/, so `sol-portals.conf` decides which
+    // backend handles each portal interface. `GNOME` is kept as a fallback
+    // hint for apps that key off well-known desktop names.
+    //
+    // Set unconditionally (not just behind `--session`) so screen-share
+    // works during dev runs (`cargo r -r`) too — the environment variable
+    // only affects portal lookups, it's harmless for the rest of sol.
+    if env::var_os("XDG_CURRENT_DESKTOP").is_none() {
+        env::set_var("XDG_CURRENT_DESKTOP", "sol:GNOME");
     }
 
     // Handle subcommands.
