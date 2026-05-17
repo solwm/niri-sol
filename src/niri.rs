@@ -4461,30 +4461,61 @@ impl Niri {
                 }};
             }
 
-            for (ws, geo) in mon.workspaces_with_render_geo() {
-                let ns = Some(ws.id().get() as usize);
+            // Sol's keyboard-driven workspace switch is a crossfade
+            // (see `Monitor::render_workspace_xfade`). Niri's default
+            // is a vertical slide where each workspace renders at its
+            // own offset y; if we kept doing that here, the layer-shell
+            // popups + workspace backgrounds would slide too and
+            // double-up visually with the crossfade. The xfade branch
+            // below locks every layer-shell surface and the workspace
+            // background to the active workspace's centered slot, so
+            // only the crossfaded workspace contents animate.
+            if mon.is_keyboard_workspace_switch() {
+                let geo = mon.active_workspace_static_geo();
                 let xray_pos = XrayPos::new(geo.loc, zoom);
-                push_popups_from_layer!(Layer::Bottom, ns, xray_pos, process!(geo));
-                push_popups_from_layer!(Layer::Background, ns, xray_pos, process!(geo));
-            }
 
-            mon.render_workspaces(ctx.r(), focus_ring, &mut |elem| push(elem.into()));
+                push_popups_from_layer!(Layer::Bottom, None, xray_pos, process!(geo));
+                push_popups_from_layer!(Layer::Background, None, xray_pos, process!(geo));
 
-            for (ws, geo) in mon.workspaces_with_render_geo() {
-                // The render element namespace. This will be set to the workspace index for
-                // elements duplicated across workspaces (i.e. background and bottom layers) in
-                // order to have their non-xray framebuffer effects separated from each other.
-                //
-                // This doesn't have to correspond exactly to workspace id or idx, the only
-                // requirement is that there's only one framebuffer effect element with a given id +
-                // namespace on the frame at once. Id + namespace is used as the cache key in the
-                // damage tracker.
-                let ns = Some(ws.id().get() as usize);
-                let xray_pos = XrayPos::new(geo.loc, zoom);
-                push_normal_from_layer!(Layer::Bottom, ns, xray_pos, process!(geo));
-                push_normal_from_layer!(Layer::Background, ns, xray_pos, process!(geo));
+                mon.render_workspaces(ctx.r(), focus_ring, &mut |elem| push(elem.into()));
 
-                process!(geo)(ws.render_background());
+                push_normal_from_layer!(Layer::Bottom, None, xray_pos, process!(geo));
+                push_normal_from_layer!(Layer::Background, None, xray_pos, process!(geo));
+                // The active workspace's background color. Sits
+                // underneath both crossfaded workspaces at the
+                // centered slot — the destination's bg is the one
+                // the user lands on.
+                if let Some(ws) = mon.workspaces_with_render_geo_idx().find_map(
+                    |((idx, ws), _)| (idx == mon.active_workspace_idx()).then_some(ws),
+                ) {
+                    process!(geo)(ws.render_background());
+                }
+            } else {
+                for (ws, geo) in mon.workspaces_with_render_geo() {
+                    let ns = Some(ws.id().get() as usize);
+                    let xray_pos = XrayPos::new(geo.loc, zoom);
+                    push_popups_from_layer!(Layer::Bottom, ns, xray_pos, process!(geo));
+                    push_popups_from_layer!(Layer::Background, ns, xray_pos, process!(geo));
+                }
+
+                mon.render_workspaces(ctx.r(), focus_ring, &mut |elem| push(elem.into()));
+
+                for (ws, geo) in mon.workspaces_with_render_geo() {
+                    // The render element namespace. This will be set to the workspace index for
+                    // elements duplicated across workspaces (i.e. background and bottom layers) in
+                    // order to have their non-xray framebuffer effects separated from each other.
+                    //
+                    // This doesn't have to correspond exactly to workspace id or idx, the only
+                    // requirement is that there's only one framebuffer effect element with a given
+                    // id + namespace on the frame at once. Id + namespace is used as the cache key
+                    // in the damage tracker.
+                    let ns = Some(ws.id().get() as usize);
+                    let xray_pos = XrayPos::new(geo.loc, zoom);
+                    push_normal_from_layer!(Layer::Bottom, ns, xray_pos, process!(geo));
+                    push_normal_from_layer!(Layer::Background, ns, xray_pos, process!(geo));
+
+                    process!(geo)(ws.render_background());
+                }
             }
         }
 

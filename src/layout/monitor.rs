@@ -7,8 +7,9 @@ use sol_config::{CornerRadius, LayoutPart};
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
 };
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
-use smithay::utils::{Logical, Point, Rectangle, Size};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
 use super::scrolling::{Column, ColumnWidth};
@@ -21,6 +22,7 @@ use super::{compute_overview_zoom, ActivateWindow, HitType, LayoutElement, Optio
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::niri_render_elements;
+use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::solid_color::SolidColorRenderElement;
@@ -70,6 +72,13 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) previous_workspace_id: Option<WorkspaceId>,
     /// In-progress switch between workspaces.
     pub(super) workspace_switch: Option<WorkspaceSwitch>,
+    /// Offscreens for the source / destination workspaces during a
+    /// keyboard-driven workspace switch. Each captures the workspace's
+    /// full render output as a single texture so we can composite both
+    /// with per-workspace alpha + scale (the crossfade-zoom effect).
+    /// Lazy: no GL allocation until a switch starts.
+    workspace_xfade_src: OffscreenBuffer,
+    workspace_xfade_dst: OffscreenBuffer,
     /// Indication where an interactively-moved window is about to be placed.
     pub(super) insert_hint: Option<InsertHint>,
     /// Insert hint element for rendering.
@@ -183,6 +192,9 @@ impl<'a, W: LayoutElement> Clone for MonitorAddWindowTarget<'a, W> {
     }
 }
 
+// `Xfade` holds a whole workspace rendered into an offscreen texture, then
+// composited at the monitor level with an alpha+scale transform. Driven by
+// the workspace-switch crossfade.
 niri_render_elements! {
     MonitorInnerRenderElement<R> => {
         Workspace = CropRenderElement<WorkspaceRenderElement<R>>,
@@ -190,6 +202,7 @@ niri_render_elements! {
         UncroppedInsertHint = InsertHintRenderElement,
         Shadow = ShadowRenderElement,
         SolidColor = SolidColorRenderElement,
+        Xfade = RescaleRenderElement<OffscreenRenderElement>,
     }
 }
 
@@ -346,6 +359,8 @@ impl<W: LayoutElement> Monitor<W> {
             overview_open: false,
             overview_progress: None,
             workspace_switch: None,
+            workspace_xfade_src: OffscreenBuffer::default(),
+            workspace_xfade_dst: OffscreenBuffer::default(),
             clock,
             base_options,
             options,
@@ -1060,6 +1075,15 @@ impl<W: LayoutElement> Monitor<W> {
             || self.workspaces.iter().any(|ws| ws.are_animations_ongoing())
     }
 
+    /// True while a keyboard-driven workspace switch animation is
+    /// running. The crossfade renderer takes over rendering during
+    /// this window; callers can use it to suppress the slide-style
+    /// per-workspace iterations they'd otherwise do (e.g. rendering
+    /// layer-shell at the sliding workspace positions).
+    pub fn is_keyboard_workspace_switch(&self) -> bool {
+        matches!(self.workspace_switch, Some(WorkspaceSwitch::Animation(_)))
+    }
+
     pub fn are_transitions_ongoing(&self) -> bool {
         self.workspace_switch.is_some()
             || self
@@ -1450,6 +1474,22 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    /// The geo where the active workspace sits with NO slide offset
+    /// (i.e. where it ends up after every workspace_switch animation
+    /// completes). Used by the crossfade renderer to anchor layer-
+    /// shell surfaces / backgrounds at the centered slot instead of
+    /// the sliding position.
+    pub fn active_workspace_static_geo(&self) -> Rectangle<f64, Logical> {
+        let scale = self.scale.fractional_scale();
+        let zoom = self.overview_zoom();
+        let ws_size = self.workspace_size(zoom);
+        let static_offset = (self.view_size.to_point() - ws_size.to_point()).downscale(2.);
+        let static_offset = static_offset
+            .to_physical_precise_round(scale)
+            .to_logical(scale);
+        Rectangle::new(static_offset, ws_size)
+    }
+
     pub fn workspaces_render_geo(&self) -> impl Iterator<Item = Rectangle<f64, Logical>> {
         let scale = self.scale.fractional_scale();
         let zoom = self.overview_zoom();
@@ -1655,6 +1695,46 @@ impl<W: LayoutElement> Monitor<W> {
     ) {
         let _span = tracy_client::span!("Monitor::render_workspaces");
 
+        // Keyboard-driven workspace switch: replace niri's vertical
+        // slide with a crossfade where the outgoing workspace fades
+        // out + shrinks slightly (1.0 → 0.92) and the incoming
+        // workspace fades in + grows from 0.85 → 1.0. Both rendered
+        // at the same centered position. Gesture-driven switches
+        // (touchpad swipe) still use the slide path below.
+        if let Some(WorkspaceSwitch::Animation(anim)) = &self.workspace_switch {
+            let span = anim.to() - anim.from();
+            if span.abs() > f64::EPSILON {
+                // `anim.from()` is fractional for chained switches
+                // (user reverses mid-animation). Pick the source
+                // workspace by rounding AWAY from the destination —
+                // ceil if we're going down (to < from), floor if up.
+                // `dst` is always rounded normally; `to` is set by
+                // `activate_workspace` to the integer target.
+                let dst_idx = anim.to().round() as usize;
+                let src_idx = if anim.to() < anim.from() {
+                    anim.from().ceil() as usize
+                } else {
+                    anim.from().floor() as usize
+                };
+                if src_idx != dst_idx
+                    && src_idx < self.workspaces.len()
+                    && dst_idx < self.workspaces.len()
+                {
+                    let progress =
+                        ((anim.value() - anim.from()) / span).clamp(0., 1.) as f32;
+                    self.render_workspace_xfade(
+                        ctx.r(),
+                        src_idx,
+                        dst_idx,
+                        progress,
+                        focus_ring,
+                        push,
+                    );
+                    return;
+                }
+            }
+        }
+
         let scale = self.scale.fractional_scale();
         // Ceil the height in physical pixels.
         let height = (self.view_size.h * scale).ceil() as i32;
@@ -1726,6 +1806,119 @@ impl<W: LayoutElement> Monitor<W> {
 
             ws.render_scrolling(ctx.r(), xray_pos, focus_ring, push!());
         }
+    }
+
+    /// Crossfade two workspaces during a keyboard switch.
+    ///
+    /// Each workspace is rendered into its own `OffscreenBuffer` so we
+    /// can composite the two textures at the monitor level with
+    /// independent alpha + scale. The animation parameters are:
+    ///   - outgoing (src): alpha `1 → 0`, scale `1.0 → 0.92`.
+    ///   - incoming (dst): alpha `0 → 1`, scale `0.85 → 1.0`.
+    /// Both anchored at the centered workspace slot, so neither
+    /// slides — the visual is a soft handoff with the new workspace
+    /// "rising into" view while the old one recedes.
+    fn render_workspace_xfade<R: NiriRenderer>(
+        &self,
+        mut ctx: RenderCtx<R>,
+        src_idx: usize,
+        dst_idx: usize,
+        progress: f32,
+        focus_ring: bool,
+        push: &mut dyn FnMut(MonitorRenderElement<R>),
+    ) {
+        let scale = self.scale.fractional_scale();
+        let ws_size = self.workspace_size(1.0);
+        let static_offset = (self.view_size.to_point() - ws_size.to_point()).downscale(2.);
+        let static_offset = static_offset
+            .to_physical_precise_round(scale)
+            .to_logical(scale);
+        let geo = Rectangle::new(static_offset, ws_size);
+
+        let src_alpha = 1.0 - progress;
+        let src_scale = 1.0 - 0.08 * progress;
+        let dst_alpha = progress;
+        let dst_scale = 0.85 + 0.15 * progress;
+
+        // Collect each workspace's render elements as GLES elements.
+        // The focus ring only renders on the destination — the
+        // outgoing workspace shouldn't keep advertising focus while
+        // fading away.
+        let mut gctx = ctx.as_gles();
+        let xray_pos = XrayPos::new(geo.loc, 1.0);
+
+        let mut src_elements = Vec::new();
+        self.workspaces[src_idx].render_floating(gctx.r(), xray_pos, false, &mut |e| {
+            src_elements.push(e)
+        });
+        self.workspaces[src_idx].render_scrolling(gctx.r(), xray_pos, false, &mut |e| {
+            src_elements.push(e)
+        });
+
+        let mut dst_elements = Vec::new();
+        self.workspaces[dst_idx].render_floating(gctx.r(), xray_pos, focus_ring, &mut |e| {
+            dst_elements.push(e)
+        });
+        self.workspaces[dst_idx].render_scrolling(gctx.r(), xray_pos, focus_ring, &mut |e| {
+            dst_elements.push(e)
+        });
+
+        let buf_scale = Scale::from(scale);
+
+        // Render each workspace into its offscreen, then push the
+        // resulting texture wrapped with our per-workspace alpha +
+        // scale. The rescale center is the workspace's geometric
+        // center in physical pixels so the shrink/grow is anchored
+        // there (not in a corner).
+        let mut push_xfade =
+            |buffer: &OffscreenBuffer, elements: &[WorkspaceRenderElement<GlesRenderer>],
+             alpha: f32,
+             scale_factor: f32| {
+                let (elem, _sync, _data) =
+                    match buffer.render(gctx.renderer, buf_scale, elements) {
+                        Ok(r) => r,
+                        Err(err) => {
+                            warn!("xfade: error rendering workspace offscreen: {err:?}");
+                            return;
+                        }
+                    };
+                // Reposition the offscreen at the centered workspace
+                // slot — the offscreen's natural offset is whatever
+                // bbox the inner elements ended up at, which doesn't
+                // correspond to the monitor-space position we want.
+                let prev_offset = elem.offset();
+                let elem = elem.with_offset(geo.loc + prev_offset);
+                let elem = elem.with_alpha(alpha);
+                let center_physical = (geo.loc + ws_size.downscale(2.).to_point())
+                    .to_physical_precise_round(scale);
+                let inner = RescaleRenderElement::from_element(
+                    elem,
+                    center_physical,
+                    scale_factor as f64,
+                );
+                let inner = MonitorInnerRenderElement::Xfade(inner);
+                let outer =
+                    RescaleRenderElement::from_element(inner, Point::from((0, 0)), 1.0);
+                let outer = RelocateRenderElement::from_element(
+                    outer,
+                    Point::from((0, 0)),
+                    Relocate::Relative,
+                );
+                push(outer);
+            };
+
+        push_xfade(
+            &self.workspace_xfade_src,
+            &src_elements,
+            src_alpha,
+            src_scale,
+        );
+        push_xfade(
+            &self.workspace_xfade_dst,
+            &dst_elements,
+            dst_alpha,
+            dst_scale,
+        );
     }
 
     pub fn render_workspace_shadows<R: NiriRenderer>(
