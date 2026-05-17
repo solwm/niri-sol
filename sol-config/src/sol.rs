@@ -37,6 +37,15 @@ pub fn parse_sol(_path: &Path, text: &str) -> miette::Result<Config> {
     config.prefer_no_csd = true;
     config.layout.workspace_count = 5;
     config.layout.focus_ring.off = false;
+    // Disable niri's hot-corner overview trigger globally — sol uses
+    // explicit keybinds (`workspace 1..5`) for workspace switching, so
+    // a cursor-bumping-the-corner gesture just gets in the way.
+    config.gestures.hot_corners.off = true;
+    // Don't pop up the hotkey-overlay help screen at sol startup.
+    // niri's default is to show it on a fresh session; sol's bindings
+    // are documented in sol.conf and the overlay just covers the
+    // wallpaper for the first frame.
+    config.hotkey_overlay.skip_at_startup = true;
 
     for (idx, raw_line) in text.lines().enumerate() {
         let lineno = idx + 1;
