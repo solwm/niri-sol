@@ -18,7 +18,7 @@ use std::rc::Rc;
 
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{
-    ffi, GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform, UniformValue,
+    ffi, GlesError, GlesFrame, GlesRenderer, Uniform, UniformValue,
 };
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::backend::renderer::Texture as _;

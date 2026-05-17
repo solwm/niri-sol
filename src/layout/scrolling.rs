@@ -5,7 +5,6 @@
 //! behaviours (animations, interactive resize, gestures, fullscreen, rendering details) are
 //! stubbed with `todo!()` for now and will be implemented incrementally.
 
-use std::iter::zip;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -227,7 +226,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn are_animations_ongoing(&self) -> bool {
         self.master
             .as_ref()
-            .map_or(false, Column::are_animations_ongoing)
+            .is_some_and(Column::are_animations_ongoing)
             || self.stack.iter().any(Column::are_animations_ongoing)
             || !self.closing_windows.is_empty()
     }
@@ -235,7 +234,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn are_transitions_ongoing(&self) -> bool {
         self.master
             .as_ref()
-            .map_or(false, Column::are_transitions_ongoing)
+            .is_some_and(Column::are_transitions_ongoing)
             || self.stack.iter().any(Column::are_transitions_ongoing)
             || !self.closing_windows.is_empty()
     }
@@ -336,7 +335,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     pub fn is_active_pending_fullscreen(&self) -> bool {
         self.focused_column()
-            .map_or(false, |c| c.is_pending_fullscreen)
+            .is_some_and(|c| c.is_pending_fullscreen)
     }
 
     pub fn new_window_toplevel_bounds(&self, _rules: &ResolvedWindowRules) -> Size<i32, Logical> {
@@ -860,10 +859,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn focus_top(&mut self) {
-        match self.focus {
-            Focus::Stack(_) => self.focus = Focus::Stack(0),
-            _ => {}
-        }
+        if let Focus::Stack(_) = self.focus { self.focus = Focus::Stack(0) }
     }
 
     pub fn focus_bottom(&mut self) {
