@@ -4,13 +4,13 @@ use std::path::Path;
 use std::{env, slice};
 
 use anyhow::{anyhow, bail, Context};
+use serde_json::json;
 use sol_config::OutputName;
 use sol_ipc::socket::Socket;
 use sol_ipc::{
     Action, Cast, CastKind, CastTarget, Event, KeyboardLayouts, LogicalOutput, Mode, Output,
     OutputConfigChanged, Overview, Request, Response, Transform, Window, WindowLayout,
 };
-use serde_json::json;
 
 use crate::cli::Msg;
 use crate::utils::version;

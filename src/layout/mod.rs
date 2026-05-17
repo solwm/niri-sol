@@ -37,11 +37,6 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use monitor::{InsertHint, InsertPosition, InsertWorkspace, MonitorAddWindowTarget};
-use sol_config::utils::MergeWith as _;
-use sol_config::{
-    Config, CornerRadius, LayoutPart, PresetSize, Workspace as WorkspaceConfig, WorkspaceReference,
-};
-use sol_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use scrolling::{Column, ColumnWidth};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::utils::RescaleRenderElement;
@@ -49,6 +44,11 @@ use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
+use sol_config::utils::MergeWith as _;
+use sol_config::{
+    Config, CornerRadius, LayoutPart, PresetSize, Workspace as WorkspaceConfig, WorkspaceReference,
+};
+use sol_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use tile::{Tile, TileRenderElement};
 use workspace::{WorkspaceAddWindowTarget, WorkspaceId};
 
@@ -1891,10 +1891,7 @@ impl<W: LayoutElement> Layout<W> {
         };
         let mon = &mut monitors[*active_monitor_idx];
         let active_idx = mon.active_workspace_idx;
-        let Some((ws, geo)) = mon
-            .workspaces_with_render_geo_mut(false)
-            .nth(active_idx)
-        else {
+        let Some((ws, geo)) = mon.workspaces_with_render_geo_mut(false).nth(active_idx) else {
             return;
         };
         let xray_pos = XrayPos::new(geo.loc, zoom);
@@ -1918,10 +1915,7 @@ impl<W: LayoutElement> Layout<W> {
         };
         let mon = &mut monitors[*active_monitor_idx];
         let active_idx = mon.active_workspace_idx;
-        let Some((ws, geo)) = mon
-            .workspaces_with_render_geo_mut(false)
-            .nth(active_idx)
-        else {
+        let Some((ws, geo)) = mon.workspaces_with_render_geo_mut(false).nth(active_idx) else {
             return;
         };
         let xray_pos = XrayPos::new(geo.loc, zoom);
@@ -1945,10 +1939,7 @@ impl<W: LayoutElement> Layout<W> {
         };
         let mon = &mut monitors[*active_monitor_idx];
         let active_idx = mon.active_workspace_idx;
-        let Some((ws, geo)) = mon
-            .workspaces_with_render_geo_mut(false)
-            .nth(active_idx)
-        else {
+        let Some((ws, geo)) = mon.workspaces_with_render_geo_mut(false).nth(active_idx) else {
             return;
         };
         let xray_pos = XrayPos::new(geo.loc, zoom);
@@ -1972,10 +1963,7 @@ impl<W: LayoutElement> Layout<W> {
         };
         let mon = &mut monitors[*active_monitor_idx];
         let active_idx = mon.active_workspace_idx;
-        let Some((ws, geo)) = mon
-            .workspaces_with_render_geo_mut(false)
-            .nth(active_idx)
-        else {
+        let Some((ws, geo)) = mon.workspaces_with_render_geo_mut(false).nth(active_idx) else {
             return;
         };
         let xray_pos = XrayPos::new(geo.loc, zoom);

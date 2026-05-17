@@ -1,8 +1,8 @@
 use std::iter::zip;
 
-use sol_config::{CornerRadius, Gradient, GradientRelativeTo};
 use smithay::backend::renderer::element::{Element as _, Kind};
 use smithay::utils::{Logical, Point, Rectangle, Size};
+use sol_config::{CornerRadius, Gradient, GradientRelativeTo};
 
 use crate::niri_render_elements;
 use crate::render_helpers::border::BorderRenderElement;

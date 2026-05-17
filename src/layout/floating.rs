@@ -2,11 +2,11 @@ use std::cmp::max;
 use std::iter::zip;
 use std::rc::Rc;
 
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
 use sol_config::utils::MergeWith as _;
 use sol_config::{PresetSize, RelativeTo};
 use sol_ipc::{PositionChange, SizeChange, WindowLayout};
-use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::scrolling::ColumnWidth;

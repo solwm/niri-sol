@@ -2,11 +2,6 @@ use std::cmp::max;
 use std::rc::Rc;
 use std::time::Duration;
 
-use sol_config::utils::MergeWith as _;
-use sol_config::{
-    CenterFocusedColumn, CornerRadius, OutputName, PresetSize, Workspace as WorkspaceConfig,
-};
-use sol_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
@@ -16,6 +11,11 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Serial, Size, Transform};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::SurfaceCachedState;
+use sol_config::utils::MergeWith as _;
+use sol_config::{
+    CenterFocusedColumn, CornerRadius, OutputName, PresetSize, Workspace as WorkspaceConfig,
+};
+use sol_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 
 use super::floating::{FloatingSpace, FloatingSpaceRenderElement};
 use super::scrolling::{
@@ -1107,12 +1107,8 @@ impl<W: LayoutElement> Workspace<W> {
             self.floating.move_left();
             true
         } else {
-            self.scrolling.move_left_animated(
-                renderer,
-                xray,
-                xray_has_blocked_out_layers,
-                xray_pos,
-            )
+            self.scrolling
+                .move_left_animated(renderer, xray, xray_has_blocked_out_layers, xray_pos)
         }
     }
 
@@ -1147,12 +1143,8 @@ impl<W: LayoutElement> Workspace<W> {
             self.floating.move_down();
             true
         } else {
-            self.scrolling.move_down_animated(
-                renderer,
-                xray,
-                xray_has_blocked_out_layers,
-                xray_pos,
-            )
+            self.scrolling
+                .move_down_animated(renderer, xray, xray_has_blocked_out_layers, xray_pos)
         }
     }
 
@@ -1167,12 +1159,8 @@ impl<W: LayoutElement> Workspace<W> {
             self.floating.move_up();
             true
         } else {
-            self.scrolling.move_up_animated(
-                renderer,
-                xray,
-                xray_has_blocked_out_layers,
-                xray_pos,
-            )
+            self.scrolling
+                .move_up_animated(renderer, xray, xray_has_blocked_out_layers, xray_pos)
         }
     }
 

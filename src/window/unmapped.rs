@@ -1,8 +1,8 @@
-use sol_config::PresetSize;
 use smithay::desktop::Window;
 use smithay::output::Output;
 use smithay::wayland::shell::xdg::ToplevelSurface;
 use smithay::wayland::xdg_activation::XdgActivationTokenData;
+use sol_config::PresetSize;
 
 use super::ResolvedWindowRules;
 

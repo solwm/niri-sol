@@ -2,15 +2,15 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use glam::{Mat3, Vec2};
-use sol_config::{
-    Color, CornerRadius, GradientColorSpace, GradientInterpolation, HueInterpolation,
-};
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, Uniform};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::gpu_span_location;
 use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
+use sol_config::{
+    Color, CornerRadius, GradientColorSpace, GradientInterpolation, HueInterpolation,
+};
 
 use super::renderer::NiriRenderer;
 use super::shader_element::ShaderRenderElement;

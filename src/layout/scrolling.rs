@@ -8,10 +8,10 @@
 use std::rc::Rc;
 use std::time::Duration;
 
-use sol_config::{PresetSize, Struts};
-use sol_ipc::{ColumnDisplay, SizeChange, WindowLayout};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
+use sol_config::{PresetSize, Struts};
+use sol_ipc::{ColumnDisplay, SizeChange, WindowLayout};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::monitor::InsertPosition;
@@ -253,9 +253,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let layout = self.column_layout();
-        for ((unified_idx, pos, size), col) in
-            layout.into_iter().zip(self.columns_mut())
-        {
+        for ((unified_idx, pos, size), col) in layout.into_iter().zip(self.columns_mut()) {
             let col_active = is_active && Some(unified_idx) == focused_idx;
             let view_rect = Rectangle::new(pos, size);
             col.update_render_elements(col_active, view_rect);
@@ -733,7 +731,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         };
 
         let scale = Scale::from(self.scale);
-        match ClosingWindow::new(renderer, snapshot, scale, tile_size, tile_pos, blocker, anim) {
+        match ClosingWindow::new(
+            renderer, snapshot, scale, tile_size, tile_pos, blocker, anim,
+        ) {
             Ok(closing) => self.closing_windows.push(closing),
             Err(err) => warn!("error creating a closing window animation: {err:?}"),
         }
@@ -859,7 +859,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn focus_top(&mut self) {
-        if let Focus::Stack(_) = self.focus { self.focus = Focus::Stack(0) }
+        if let Focus::Stack(_) = self.focus {
+            self.focus = Focus::Stack(0)
+        }
     }
 
     pub fn focus_bottom(&mut self) {
@@ -1847,8 +1849,8 @@ fn compute_working_area(
 
 #[cfg(test)]
 mod tests {
-    use sol_config::FloatOrInt;
     use smithay::utils::{Rectangle, Size};
+    use sol_config::FloatOrInt;
 
     use super::*;
     use crate::utils::round_logical_in_physical;

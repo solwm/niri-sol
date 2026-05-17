@@ -1,7 +1,6 @@
 use std::cell::Cell;
 
 use calloop::Interest;
-use sol_config::PresetSize;
 use smithay::desktop::{
     find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, utils, LayerSurface,
     PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy, Window,
@@ -35,6 +34,7 @@ use smithay::wayland::xdg_foreign::{XdgForeignHandler, XdgForeignState};
 use smithay::{
     delegate_kde_decoration, delegate_xdg_decoration, delegate_xdg_foreign, delegate_xdg_shell,
 };
+use sol_config::PresetSize;
 use tracing::field::Empty;
 
 use crate::input::move_grab::MoveGrab;

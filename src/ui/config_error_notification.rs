@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
-use sol_config::Config;
 use ordered_float::NotNan;
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::FontDescription;
@@ -13,6 +12,7 @@ use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::Output;
 use smithay::reexports::gbm::Format as Fourcc;
 use smithay::utils::{Point, Transform};
+use sol_config::Config;
 
 use crate::animation::{Animation, Clock};
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;

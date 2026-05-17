@@ -1,8 +1,8 @@
+use smithay::desktop::LayerSurface;
+use smithay::wayland::shell::wlr_layer::Layer;
 use sol_config::layer_rule::{LayerRule, Match};
 use sol_config::utils::MergeWith as _;
 use sol_config::{BackgroundEffect, BlockOutFrom, CornerRadius, ResolvedPopupsRules, ShadowRule};
-use smithay::desktop::LayerSurface;
-use smithay::wayland::shell::wlr_layer::Layer;
 
 pub mod mapped;
 pub use mapped::MappedLayer;

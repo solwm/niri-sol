@@ -1,12 +1,12 @@
 use core::f64;
 use std::rc::Rc;
 
-use sol_config::utils::MergeWith as _;
-use sol_config::{Color, CornerRadius, GradientInterpolation};
-use sol_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
+use sol_config::utils::MergeWith as _;
+use sol_config::{Color, CornerRadius, GradientInterpolation};
+use sol_ipc::WindowLayout;
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::opening_window::{OpenAnimation, OpeningWindowRenderElement};

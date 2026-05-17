@@ -1,11 +1,11 @@
-use sol_config::utils::MergeWith as _;
-use sol_config::{Config, LayerRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::desktop::{LayerSurface, PopupKind, PopupManager};
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use smithay::wayland::compositor::{remove_pre_commit_hook, HookId};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
+use sol_config::utils::MergeWith as _;
+use sol_config::{Config, LayerRule};
 
 use super::ResolvedLayerRules;
 use crate::animation::Clock;

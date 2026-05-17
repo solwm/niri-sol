@@ -1,7 +1,6 @@
 use std::cell::{Cell, Ref, RefCell};
 use std::time::Duration;
 
-use sol_config::{Color, Config, CornerRadius, GradientInterpolation, WindowRule};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -19,6 +18,7 @@ use smithay::wayland::shell::xdg::{
     SurfaceCachedState, ToplevelCachedState, ToplevelConfigure, ToplevelSurface,
     XdgToplevelSurfaceData,
 };
+use sol_config::{Color, Config, CornerRadius, GradientInterpolation, WindowRule};
 use wayland_backend::server::Credentials;
 
 use super::{ResolvedWindowRules, WindowRef};

@@ -1,6 +1,5 @@
 use std::collections::hash_map::Entry;
 
-use sol_ipc::PositionChange;
 use smithay::backend::renderer::utils::on_commit_buffer_handler;
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::reexports::calloop::Interest;
@@ -17,6 +16,7 @@ use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shell::xdg::ToplevelCachedState;
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
+use sol_ipc::PositionChange;
 
 use super::xdg_shell::add_mapped_toplevel_pre_commit_hook;
 use crate::handlers::XDG_ACTIVATION_TOKEN_TIMEOUT;

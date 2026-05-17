@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Mutex;
 
-use sol_config::Config;
 use ordered_float::NotNan;
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::{Alignment, FontDescription};
@@ -12,6 +11,7 @@ use smithay::backend::renderer::element::Kind;
 use smithay::output::Output;
 use smithay::reexports::gbm::Format as Fourcc;
 use smithay::utils::{Point, Transform};
+use sol_config::Config;
 
 use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;

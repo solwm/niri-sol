@@ -1,7 +1,7 @@
 use std::iter::zip;
 
-use sol_config::CornerRadius;
 use smithay::utils::{Logical, Point, Rectangle, Size};
+use sol_config::CornerRadius;
 
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;

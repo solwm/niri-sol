@@ -6,10 +6,6 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use anyhow::ensure;
-use sol_config::{
-    Action, Bind, Color, Config, CornerRadius, GradientInterpolation, Key, Modifiers, MruDirection,
-    MruFilter, MruScope, Trigger,
-};
 use pango::FontDescription;
 use pangocairo::cairo::{self, ImageSurface};
 use smithay::backend::allocator::Fourcc;
@@ -22,6 +18,10 @@ use smithay::backend::renderer::Color32F;
 use smithay::input::keyboard::Keysym;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
+use sol_config::{
+    Action, Bind, Color, Config, CornerRadius, GradientInterpolation, Key, Modifiers, MruDirection,
+    MruFilter, MruScope, Trigger,
+};
 
 use crate::animation::{Animation, Clock};
 use crate::layout::focus_ring::{FocusRing, FocusRingRenderElement};
@@ -874,12 +874,7 @@ impl ViewPos {
         }
     }
 
-    fn animate_from_with_config(
-        &mut self,
-        from: f64,
-        config: sol_config::Animation,
-        clock: Clock,
-    ) {
+    fn animate_from_with_config(&mut self, from: f64, config: sol_config::Animation, clock: Clock) {
         // FIXME: also compute and use current velocity.
         let anim = Animation::new(clock, self.current() + from, self.target(), 0., config);
         *self = ViewPos::Animation(anim);

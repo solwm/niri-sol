@@ -6,8 +6,8 @@ use std::sync::mpsc;
 use std::time::{Duration, SystemTime};
 use std::{io, thread};
 
-use sol_config::{Config, ConfigParseResult, ConfigPath};
 use smithay::reexports::calloop::channel::SyncSender;
+use sol_config::{Config, ConfigParseResult, ConfigPath};
 
 use crate::niri::State;
 

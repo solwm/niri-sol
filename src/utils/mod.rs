@@ -13,7 +13,6 @@ use anyhow::{ensure, Context};
 use bitflags::bitflags;
 use directories::UserDirs;
 use git_version::git_version;
-use sol_config::{Config, OutputName};
 use smithay::backend::renderer::utils::{
     with_renderer_surface_state, RendererSurfaceStateUserData,
 };
@@ -31,6 +30,7 @@ use smithay::wayland::shell::xdg::{
     ToplevelCachedState, ToplevelConfigure, ToplevelState, ToplevelSurface, XdgToplevelSurfaceData,
     XdgToplevelSurfaceRoleAttributes,
 };
+use sol_config::{Config, OutputName};
 use wayland_backend::server::Credentials;
 
 use crate::handlers::KdeDecorationsModeState;

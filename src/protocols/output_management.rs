@@ -3,8 +3,6 @@ use std::collections::HashMap;
 use std::iter::zip;
 use std::mem;
 
-use sol_config::{FloatOrInt, OutputName, Vrr};
-use sol_ipc::Transform;
 use smithay::reexports::wayland_protocols_wlr::output_management::v1::server::{
     zwlr_output_configuration_head_v1, zwlr_output_configuration_v1, zwlr_output_head_v1,
     zwlr_output_manager_v1, zwlr_output_mode_v1,
@@ -14,6 +12,8 @@ use smithay::reexports::wayland_server::protocol::wl_output::Transform as WlTran
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
 };
+use sol_config::{FloatOrInt, OutputName, Vrr};
+use sol_ipc::Transform;
 use zwlr_output_configuration_head_v1::ZwlrOutputConfigurationHeadV1;
 use zwlr_output_configuration_v1::ZwlrOutputConfigurationV1;
 use zwlr_output_head_v1::{AdaptiveSyncState, ZwlrOutputHeadV1};

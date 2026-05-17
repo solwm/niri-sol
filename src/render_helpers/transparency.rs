@@ -130,7 +130,13 @@ impl RenderElement<GlesRenderer> for TransparencyRenderElement {
             Ok(t) => t,
             Err(_) => {
                 return <OffscreenRenderElement as RenderElement<GlesRenderer>>::draw(
-                    &self.inner, frame, src, dst, damage, opaque_regions, _cache,
+                    &self.inner,
+                    frame,
+                    src,
+                    dst,
+                    damage,
+                    opaque_regions,
+                    _cache,
                 );
             }
         };
@@ -139,7 +145,13 @@ impl RenderElement<GlesRenderer> for TransparencyRenderElement {
             Some(p) => p,
             None => {
                 return <OffscreenRenderElement as RenderElement<GlesRenderer>>::draw(
-                    &self.inner, frame, src, dst, damage, opaque_regions, _cache,
+                    &self.inner,
+                    frame,
+                    src,
+                    dst,
+                    damage,
+                    opaque_regions,
+                    _cache,
                 );
             }
         };
@@ -230,7 +242,15 @@ impl<'render> RenderElement<TtyRenderer<'render>> for TransparencyRenderElement 
         cache: Option<&UserDataMap>,
     ) -> Result<(), TtyRendererError<'render>> {
         let gles_frame = frame.as_gles_frame();
-        RenderElement::<GlesRenderer>::draw(self, gles_frame, src, dst, damage, opaque_regions, cache)?;
+        RenderElement::<GlesRenderer>::draw(
+            self,
+            gles_frame,
+            src,
+            dst,
+            damage,
+            opaque_regions,
+            cache,
+        )?;
         Ok(())
     }
 
@@ -241,4 +261,3 @@ impl<'render> RenderElement<TtyRenderer<'render>> for TransparencyRenderElement 
         None
     }
 }
-

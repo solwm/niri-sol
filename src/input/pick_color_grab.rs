@@ -1,4 +1,3 @@
-use sol_ipc::PickedColor;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::ButtonState;
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
@@ -11,6 +10,7 @@ use smithay::input::pointer::{
 };
 use smithay::input::SeatHandler;
 use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
+use sol_ipc::PickedColor;
 
 use crate::niri::State;
 use crate::render_helpers::{render_and_download, RenderCtx, RenderTarget};

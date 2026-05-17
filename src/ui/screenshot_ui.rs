@@ -7,8 +7,6 @@ use std::rc::Rc;
 
 use anyhow::Context;
 use arrayvec::ArrayVec;
-use sol_config::{Action, Config};
-use sol_ipc::SizeChange;
 use pango::{Alignment, FontDescription};
 use pangocairo::cairo::{self, ImageSurface};
 use smithay::backend::allocator::Fourcc;
@@ -20,6 +18,8 @@ use smithay::backend::renderer::{ExportMem, Texture as _};
 use smithay::input::keyboard::{Keysym, ModifiersState};
 use smithay::output::{Output, WeakOutput};
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
+use sol_config::{Action, Config};
+use sol_ipc::SizeChange;
 
 use crate::animation::{Animation, Clock};
 use crate::layout::floating::DIRECTIONAL_MOVE_PX;

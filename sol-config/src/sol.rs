@@ -12,9 +12,9 @@ use std::path::Path;
 use std::str::FromStr;
 
 use miette::miette;
-use sol_ipc::{ConfiguredMode, Transform};
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::Keysym;
+use sol_ipc::{ConfiguredMode, Transform};
 use tracing::warn;
 
 use crate::animations::{Curve, EasingParams, Kind};
@@ -109,8 +109,8 @@ fn apply_setting(config: &mut Config, key: &str, value: &str, lineno: usize) -> 
         }
 
         "mode" => {
-            let mode = ConfiguredMode::from_str(value)
-                .map_err(|e| miette!("mode {value:?}: {e}"))?;
+            let mode =
+                ConfiguredMode::from_str(value).map_err(|e| miette!("mode {value:?}: {e}"))?;
             config.outputs.0.push(Output {
                 off: false,
                 name: PRIMARY_OUTPUT_NAME.into(),
@@ -143,12 +143,13 @@ fn apply_setting(config: &mut Config, key: &str, value: &str, lineno: usize) -> 
         }
 
         "exec-once" => {
-            let argv =
-                shell_split(value).ok_or_else(|| miette!("exec-once: malformed quoting"))?;
+            let argv = shell_split(value).ok_or_else(|| miette!("exec-once: malformed quoting"))?;
             if argv.is_empty() {
                 return Err(miette!("exec-once: empty command"));
             }
-            config.spawn_at_startup.push(SpawnAtStartup { command: argv });
+            config
+                .spawn_at_startup
+                .push(SpawnAtStartup { command: argv });
         }
 
         "bind" => apply_bind(config, value, lineno)?,
@@ -199,9 +200,9 @@ fn apply_setting(config: &mut Config, key: &str, value: &str, lineno: usize) -> 
         }
 
         "inactive_blur_passes" => {
-            config.blur.passes = value.parse::<u8>().map_err(|e| {
-                miette!("line {lineno}: inactive_blur_passes {value:?}: {e}")
-            })?;
+            config.blur.passes = value
+                .parse::<u8>()
+                .map_err(|e| miette!("line {lineno}: inactive_blur_passes {value:?}: {e}"))?;
         }
 
         "inactive_blur_radius" => {
@@ -237,9 +238,9 @@ fn apply_setting(config: &mut Config, key: &str, value: &str, lineno: usize) -> 
             });
         }
         "tile_movement_stiffness" => {
-            let v = value.parse::<u32>().map_err(|e| {
-                miette!("line {lineno}: tile_movement_stiffness {value:?}: {e}")
-            })?;
+            let v = value
+                .parse::<u32>()
+                .map_err(|e| miette!("line {lineno}: tile_movement_stiffness {value:?}: {e}"))?;
             if v == 0 {
                 return Err(miette!(
                     "line {lineno}: tile_movement_stiffness {value:?}: must be >= 1"
@@ -265,7 +266,9 @@ fn apply_setting(config: &mut Config, key: &str, value: &str, lineno: usize) -> 
             let v = value
                 .parse::<u32>()
                 .map_err(|e| miette!("line {lineno}: tile_movement_duration_ms {value:?}: {e}"))?;
-            set_easing(&mut config.animations.tile_movement.0, |p| p.duration_ms = v);
+            set_easing(&mut config.animations.tile_movement.0, |p| {
+                p.duration_ms = v
+            });
         }
         "tile_movement_curve" => {
             let curve = parse_curve(value, lineno)?;
@@ -282,7 +285,9 @@ fn apply_setting(config: &mut Config, key: &str, value: &str, lineno: usize) -> 
             let v = value
                 .parse::<u32>()
                 .map_err(|e| miette!("line {lineno}: window_open_duration_ms {value:?}: {e}"))?;
-            set_easing(&mut config.animations.window_open.anim, |p| p.duration_ms = v);
+            set_easing(&mut config.animations.window_open.anim, |p| {
+                p.duration_ms = v
+            });
         }
         "window_open_curve" => {
             let curve = parse_curve(value, lineno)?;
@@ -298,11 +303,15 @@ fn apply_setting(config: &mut Config, key: &str, value: &str, lineno: usize) -> 
             let v = value
                 .parse::<u32>()
                 .map_err(|e| miette!("line {lineno}: window_close_duration_ms {value:?}: {e}"))?;
-            set_easing(&mut config.animations.window_close.anim, |p| p.duration_ms = v);
+            set_easing(&mut config.animations.window_close.anim, |p| {
+                p.duration_ms = v
+            });
         }
         "window_close_curve" => {
             let curve = parse_curve(value, lineno)?;
-            set_easing(&mut config.animations.window_close.anim, |p| p.curve = curve);
+            set_easing(&mut config.animations.window_close.anim, |p| {
+                p.curve = curve
+            });
         }
 
         // ──── Parse-and-ignore (not yet implemented in niri's master-stack rework) ────
@@ -346,10 +355,7 @@ fn set_tile_movement_spring(
 /// to `Kind::Easing` if it wasn't already; the user can mix spring + easing
 /// at the per-property level in KDL, but the flat sol.conf format only
 /// drives easing for open/close.
-fn set_easing(
-    anim: &mut crate::animations::Animation,
-    f: impl FnOnce(&mut EasingParams),
-) {
+fn set_easing(anim: &mut crate::animations::Animation, f: impl FnOnce(&mut EasingParams)) {
     let mut params = match anim.kind {
         Kind::Easing(p) => p,
         _ => EasingParams {
@@ -380,9 +386,7 @@ fn parse_curve(s: &str, lineno: usize) -> miette::Result<Curve> {
             let x2 = nums.next().and_then(|r| r.ok());
             let y2 = nums.next().and_then(|r| r.ok());
             match (x1, y1, x2, y2) {
-                (Some(x1), Some(y1), Some(x2), Some(y2)) => {
-                    Ok(Curve::CubicBezier(x1, y1, x2, y2))
-                }
+                (Some(x1), Some(y1), Some(x2), Some(y2)) => Ok(Curve::CubicBezier(x1, y1, x2, y2)),
                 _ => Err(miette!(
                     "line {lineno}: cubic-bezier expects four comma-separated numbers"
                 )),
@@ -436,13 +440,7 @@ fn apply_remap(config: &mut Config, value: &str, lineno: usize) -> miette::Resul
         }
     };
 
-    let opts = config
-        .input
-        .keyboard
-        .xkb
-        .options
-        .as_deref()
-        .unwrap_or("");
+    let opts = config.input.keyboard.xkb.options.as_deref().unwrap_or("");
     let merged = if opts.is_empty() {
         xkb_option.to_string()
     } else {
@@ -606,7 +604,10 @@ mod tests {
 
     #[test]
     fn shell_split_basics() {
-        assert_eq!(shell_split("foo bar"), Some(vec!["foo".into(), "bar".into()]));
+        assert_eq!(
+            shell_split("foo bar"),
+            Some(vec!["foo".into(), "bar".into()])
+        );
         assert_eq!(
             shell_split("sh -c \"echo hi\""),
             Some(vec!["sh".into(), "-c".into(), "echo hi".into()])

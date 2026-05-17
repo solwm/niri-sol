@@ -13,11 +13,6 @@ use std::{env, mem, thread};
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
-use sol_config::debug::PreviewRender;
-use sol_config::{
-    Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
-    WorkspaceReference, Xkb,
-};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -110,6 +105,11 @@ use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 use smithay::wayland::xdg_activation::XdgActivationState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
+use sol_config::debug::PreviewRender;
+use sol_config::{
+    Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
+    WorkspaceReference, Xkb,
+};
 use wayland_server::protocol::wl_output::WlOutput;
 
 #[cfg(feature = "dbus")]
@@ -4485,9 +4485,10 @@ impl Niri {
                 // underneath both crossfaded workspaces at the
                 // centered slot — the destination's bg is the one
                 // the user lands on.
-                if let Some(ws) = mon.workspaces_with_render_geo_idx().find_map(
-                    |((idx, ws), _)| (idx == mon.active_workspace_idx()).then_some(ws),
-                ) {
+                if let Some(ws) = mon
+                    .workspaces_with_render_geo_idx()
+                    .find_map(|((idx, ws), _)| (idx == mon.active_workspace_idx()).then_some(ws))
+                {
                     process!(geo)(ws.render_background());
                 }
             } else {

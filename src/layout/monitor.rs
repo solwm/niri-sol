@@ -3,13 +3,13 @@ use std::iter::zip;
 use std::rc::Rc;
 use std::time::Duration;
 
-use sol_config::{CornerRadius, LayoutPart};
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
+use sol_config::{CornerRadius, LayoutPart};
 
 use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
 use super::scrolling::{Column, ColumnWidth};
@@ -1720,8 +1720,7 @@ impl<W: LayoutElement> Monitor<W> {
                     && src_idx < self.workspaces.len()
                     && dst_idx < self.workspaces.len()
                 {
-                    let progress =
-                        ((anim.value() - anim.from()) / span).clamp(0., 1.) as f32;
+                    let progress = ((anim.value() - anim.from()) / span).clamp(0., 1.) as f32;
                     self.render_workspace_xfade(
                         ctx.r(),
                         src_idx,
@@ -1848,12 +1847,10 @@ impl<W: LayoutElement> Monitor<W> {
         let xray_pos = XrayPos::new(geo.loc, 1.0);
 
         let mut src_elements = Vec::new();
-        self.workspaces[src_idx].render_floating(gctx.r(), xray_pos, false, &mut |e| {
-            src_elements.push(e)
-        });
-        self.workspaces[src_idx].render_scrolling(gctx.r(), xray_pos, false, &mut |e| {
-            src_elements.push(e)
-        });
+        self.workspaces[src_idx]
+            .render_floating(gctx.r(), xray_pos, false, &mut |e| src_elements.push(e));
+        self.workspaces[src_idx]
+            .render_scrolling(gctx.r(), xray_pos, false, &mut |e| src_elements.push(e));
 
         let mut dst_elements = Vec::new();
         self.workspaces[dst_idx].render_floating(gctx.r(), xray_pos, focus_ring, &mut |e| {
@@ -1870,42 +1867,34 @@ impl<W: LayoutElement> Monitor<W> {
         // scale. The rescale center is the workspace's geometric
         // center in physical pixels so the shrink/grow is anchored
         // there (not in a corner).
-        let mut push_xfade =
-            |buffer: &OffscreenBuffer, elements: &[WorkspaceRenderElement<GlesRenderer>],
-             alpha: f32,
-             scale_factor: f32| {
-                let (elem, _sync, _data) =
-                    match buffer.render(gctx.renderer, buf_scale, elements) {
-                        Ok(r) => r,
-                        Err(err) => {
-                            warn!("xfade: error rendering workspace offscreen: {err:?}");
-                            return;
-                        }
-                    };
-                // Reposition the offscreen at the centered workspace
-                // slot — the offscreen's natural offset is whatever
-                // bbox the inner elements ended up at, which doesn't
-                // correspond to the monitor-space position we want.
-                let prev_offset = elem.offset();
-                let elem = elem.with_offset(geo.loc + prev_offset);
-                let elem = elem.with_alpha(alpha);
-                let center_physical = (geo.loc + ws_size.downscale(2.).to_point())
-                    .to_physical_precise_round(scale);
-                let inner = RescaleRenderElement::from_element(
-                    elem,
-                    center_physical,
-                    scale_factor as f64,
-                );
-                let inner = MonitorInnerRenderElement::Xfade(inner);
-                let outer =
-                    RescaleRenderElement::from_element(inner, Point::from((0, 0)), 1.0);
-                let outer = RelocateRenderElement::from_element(
-                    outer,
-                    Point::from((0, 0)),
-                    Relocate::Relative,
-                );
-                push(outer);
+        let mut push_xfade = |buffer: &OffscreenBuffer,
+                              elements: &[WorkspaceRenderElement<GlesRenderer>],
+                              alpha: f32,
+                              scale_factor: f32| {
+            let (elem, _sync, _data) = match buffer.render(gctx.renderer, buf_scale, elements) {
+                Ok(r) => r,
+                Err(err) => {
+                    warn!("xfade: error rendering workspace offscreen: {err:?}");
+                    return;
+                }
             };
+            // Reposition the offscreen at the centered workspace
+            // slot — the offscreen's natural offset is whatever
+            // bbox the inner elements ended up at, which doesn't
+            // correspond to the monitor-space position we want.
+            let prev_offset = elem.offset();
+            let elem = elem.with_offset(geo.loc + prev_offset);
+            let elem = elem.with_alpha(alpha);
+            let center_physical =
+                (geo.loc + ws_size.downscale(2.).to_point()).to_physical_precise_round(scale);
+            let inner =
+                RescaleRenderElement::from_element(elem, center_physical, scale_factor as f64);
+            let inner = MonitorInnerRenderElement::Xfade(inner);
+            let outer = RescaleRenderElement::from_element(inner, Point::from((0, 0)), 1.0);
+            let outer =
+                RelocateRenderElement::from_element(outer, Point::from((0, 0)), Relocate::Relative);
+            push(outer);
+        };
 
         push_xfade(
             &self.workspace_xfade_src,

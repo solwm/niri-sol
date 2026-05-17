@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 
 use glam::{Mat3, Vec2};
-use sol_config::CornerRadius;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::{Element, Id, RenderElement};
 use smithay::backend::renderer::gles::{
@@ -12,6 +11,7 @@ use smithay::backend::renderer::{Frame as _, FrameContext, Offscreen, Texture as
 use smithay::gpu_span_location;
 use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Transform};
+use sol_config::CornerRadius;
 
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 use crate::render_helpers::background_effect::RenderParams;

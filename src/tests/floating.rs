@@ -1,8 +1,8 @@
 use client::ClientId;
 use insta::assert_snapshot;
+use smithay::utils::Point;
 use sol_config::Config;
 use sol_ipc::SizeChange;
-use smithay::utils::Point;
 use wayland_client::protocol::wl_surface::WlSurface;
 
 use super::*;

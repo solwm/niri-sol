@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use calloop::EventLoop;
-use sol_config::Config;
 use smithay::reexports::wayland_server::Display;
+use sol_config::Config;
 
 use crate::niri::State;
 

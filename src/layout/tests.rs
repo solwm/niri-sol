@@ -1,15 +1,15 @@
 use std::cell::{Cell, OnceCell, RefCell};
 
+use proptest::prelude::*;
+use proptest_derive::Arbitrary;
+use smithay::output::{Mode, PhysicalProperties, Subpixel};
+use smithay::utils::Rectangle;
 use sol_config::utils::{Flag, MergeWith as _};
 use sol_config::workspace::WorkspaceName;
 use sol_config::{
     CenterFocusedColumn, FloatOrInt, OutputName, Struts, TabIndicatorLength, TabIndicatorPosition,
     WorkspaceReference,
 };
-use proptest::prelude::*;
-use proptest_derive::Arbitrary;
-use smithay::output::{Mode, PhysicalProperties, Subpixel};
-use smithay::utils::Rectangle;
 
 use super::*;
 

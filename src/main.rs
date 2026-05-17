@@ -15,6 +15,8 @@ use clap::{CommandFactory, Parser};
 use clap_complete::Shell;
 use clap_complete_nushell::Nushell;
 use directories::ProjectDirs;
+use sd_notify::NotifyState;
+use smithay::reexports::wayland_server::Display;
 use sol::cli::{Cli, CompletionShell, Sub};
 #[cfg(feature = "dbus")]
 use sol::dbus;
@@ -27,8 +29,6 @@ use sol::utils::spawning::{
 use sol::utils::{cause_panic, version, watcher, xwayland, IS_SYSTEMD_SERVICE};
 use sol_config::{Config, ConfigPath};
 use sol_ipc::socket::SOCKET_PATH_ENV;
-use sd_notify::NotifyState;
-use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
 
 const DEFAULT_LOG_FILTER: &str = "sol=debug,smithay::backend::renderer::gles=error";
@@ -107,7 +107,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 env::remove_var("WAYLAND_SOCKET");
             }
         }
-
     }
 
     // Force XDG_SESSION_TYPE=wayland unconditionally (not just for `--session`).

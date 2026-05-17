@@ -1,9 +1,9 @@
 use std::sync::{Arc, Mutex};
 
-use sol_config::CornerRadius;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale};
 use smithay::wayland::compositor::{with_states, SurfaceData};
+use sol_config::CornerRadius;
 use wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::handlers::background_effect::get_cached_blur_region;

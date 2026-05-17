@@ -1,5 +1,5 @@
-use sol_config::CornerRadius;
 use smithay::utils::{Logical, Point, Rectangle, Size};
+use sol_config::CornerRadius;
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;

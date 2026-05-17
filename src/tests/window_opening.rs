@@ -1,8 +1,8 @@
 use std::fmt::{self, Write as _};
 
 use insta::assert_snapshot;
-use sol_config::Config;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use sol_config::Config;
 
 use super::*;
 use crate::layout::LayoutElement as _;
